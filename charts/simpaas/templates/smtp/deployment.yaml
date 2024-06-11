@@ -1,0 +1,78 @@
+{{- if .Values.smtp.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "simpaas.smtp.name" . }}
+  labels:
+    {{- include "simpaas.smtp.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.smtp.replicas }}
+  selector:
+    matchLabels:
+      {{- include "simpaas.smtp.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      {{- with .Values.smtp.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "simpaas.smtp.labels" . | nindent 8 }}
+        {{- with .Values.smtp.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- with .Values.smtp.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "simpaas.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.smtp.podSecurityContext | nindent 8 }}
+      containers:
+      - name: smtp
+        securityContext:
+          {{- toYaml .Values.smtp.securityContext | nindent 12 }}
+        image: {{ printf "%s:%s" .Values.smtp.image.repository .Values.smtp.image.tag }}
+        imagePullPolicy: {{ default .Values.common.image.pullPolicy .Values.smtp.image.pullPolicy }}
+        ports:
+        - name: smtp
+          containerPort: {{ .Values.smtp.port }}
+          protocol: TCP
+        {{- with .Values.smtp.livenessProbe }}
+        livenessProbe:
+          {{ toYaml . | nindent 10 }}
+        {{- end }}
+        {{- with .Values.smtp.readinessProbe }}
+        readinessProbe:
+          {{ toYaml . | nindent 10 }}
+        {{- end }}
+        env:
+        - name: PORT
+          value: {{ .Values.smtp.port | quote }}
+        {{- with .Values.smtp.env }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+        resources:
+          {{- toYaml .Values.smtp.resources | nindent 10 }}
+        {{- with .Values.smtp.volumeMounts }}
+        volumeMounts:
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with .Values.smtp.volumes }}
+      volumes:
+      {{- toYaml . | nindent 6 }}
+      {{- end }}
+      {{- with .Values.smtp.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.smtp.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.smtp.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}

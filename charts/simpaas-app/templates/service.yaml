@@ -1,0 +1,22 @@
+{{- range $service := .Values.services }}
+{{- if gt (len (default list $service.expose)) 0 }}
+{{- $vars := dict "Chart" $.Chart "Release" $.Release "Service" $service  -}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "simpaas-app.service.name" $vars }}
+  labels:
+    {{- include "simpaas-app.service.labels" $vars | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+  {{- range $expose := $service.expose }}
+  - port: {{ $expose.port }}
+    targetPort: {{ $expose.port }}
+    protocol: {{ $expose.protocol }}
+  {{- end }}
+  selector:
+    {{- include "simpaas-app.service.selectorLabels" $vars | nindent 4 }}
+---
+{{- end }}
+{{- end }}

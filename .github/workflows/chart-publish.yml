@@ -1,0 +1,59 @@
+name: chart-publish
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref_name }}
+  cancel-in-progress: true
+
+on:
+  push:
+    tags: [chart-*]
+  workflow_dispatch:
+
+jobs:
+  chart-publish:
+    name: chart-publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+    - name: checkout
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: set up helm
+      uses: azure/setup-helm@v4
+
+    - name: set up git
+      run: |
+        git config user.name "$GITHUB_ACTOR"
+        git config user.email "$GITHUB_ACTOR@users.noreply.github.com"
+
+    - name: add helm repositories
+      run: |
+        helm repo add jetstack https://charts.jetstack.io
+        helm repo add opentelemetry https://open-telemetry.github.io/opentelemetry-helm-charts
+
+    - name: create temporary directory
+      run: mkdir -p /tmp/charts
+
+    - name: package simpaas
+      working-directory: charts/simpaas
+      run: |
+        helm dependency build
+        helm package -d /tmp/charts .
+
+    - name: package simpaas-app
+      working-directory: charts/simpaas-app
+      run: |
+        helm dependency build
+        helm package -d /tmp/charts .
+
+    - name: publish
+      run: |
+        git checkout gh-pages
+        cp /tmp/charts/*.tgz .
+        helm repo index .
+        git add .
+        git commit -m "update charts"
+        git push

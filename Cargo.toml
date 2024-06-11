@@ -1,0 +1,39 @@
+[dependencies]
+aide = {version = "0", features = ["axum"]}
+anyhow = "1"
+axum = "0"
+bcrypt = "0"
+clap = {version = "4", features = ["derive", "env"]}
+futures = "0"
+hmac = "0"
+jwt = "0"
+k8s-openapi = {version = "0", features = ["schemars", "v1_30"]}
+kube = {version = "0", features = ["derive", "runtime"]}
+liquid = {version = "0", default-features = false}
+mail-send = "0"
+opentelemetry = {version = "0", features = ["trace"]}
+opentelemetry-jaeger = "0"
+opentelemetry-otlp = "0"
+opentelemetry-semantic-conventions = "0"
+opentelemetry_sdk = {version = "0", features = ["trace", "rt-tokio"]}
+regex = "1"
+schemars = "0"
+serde = {version = "1", features = ["derive"]}
+serde_json = "1"
+serde_trim = "1"
+serde_yaml = "0"
+sha2 = "0"
+tempdir = "0"
+thiserror = "1"
+tokio = {version = "1", features = ["full"]}
+tower-http = {version = "0", features = ["trace"]}
+tracing = "0"
+tracing-opentelemetry = "0"
+tracing-subscriber = {version = "0", features = ["env-filter"]}
+uuid = {version = "1", features = ["serde", "v4"]}
+validator = {version = "0", features = ["derive"]}
+
+[package]
+edition = "2021"
+name = "simpaas"
+version = "0.1.0"

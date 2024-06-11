@@ -1,0 +1,131 @@
+{{- $smtpSecretName := printf "%s-smtp" .Release.Name -}}
+{{- $podAnnotations := merge .Values.common.podAnnotations .Values.api.podAnnotations -}}
+{{- $podLabels := merge .Values.common.podLabels .Values.api.podLabels -}}
+{{- $imagePullSecrets := concat .Values.common.imagePullSecrets .Values.api.imagePullSecrets -}}
+{{- $podSecurityContext := merge .Values.common.podSecurityContext .Values.api.podSecurityContext -}}
+{{- $securityContext := merge .Values.common.securityContext .Values.api.securityContext -}}
+{{- $env := concat .Values.common.env .Values.api.env -}}
+{{- $volumeMounts := concat .Values.common.volumeMounts .Values.api.volumeMounts -}}
+{{- $volumes := concat .Values.common.volumes .Values.api.volumes -}}
+{{- $nodeSelector := merge .Values.common.nodeSelector .Values.api.nodeSelector -}}
+{{- $affinity := merge .Values.common.affinity .Values.api.affinity -}}
+{{- $tolerations := concat .Values.common.tolerations .Values.api.tolerations -}}
+{{- $webappFqdn := include "simpaas.fqdn" (dict "Ingress" .Values.webapp.ingress "Values" .Values) -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "simpaas.api.name" . }}
+  labels:
+    {{- include "simpaas.api.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.api.replicas }}
+  selector:
+    matchLabels:
+      {{- include "simpaas.api.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      {{- with $podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "simpaas.api.labels" . | nindent 8 }}
+        {{- with $podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- with $imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "simpaas.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml $podSecurityContext | nindent 8 }}
+      containers:
+      - name: api
+        securityContext:
+          {{- toYaml $securityContext | nindent 12 }}
+        image: {{ printf "%s:%s" .Values.api.image.repository (include "simpaas.api.tag" .) }}
+        imagePullPolicy: {{ default .Values.common.image.pullPolicy .Values.api.image.pullPolicy }}
+        ports:
+        - name: http
+          containerPort: {{ .Values.api.port }}
+          protocol: TCP
+        {{- with .Values.api.livenessProbe }}
+        livenessProbe:
+          {{ toYaml . | nindent 10 }}
+        {{- end }}
+        {{- with .Values.api.readinessProbe }}
+        readinessProbe:
+          {{ toYaml . | nindent 10 }}
+        {{- end }}
+        env:
+        - name: BIND_ADDR
+          value: {{ printf "0.0.0.0:%d" (.Values.api.port | int) }}
+        - name: JWT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "simpaas.api.jwtSecretName" . }}
+              key: {{ .Values.api.jwtSecret.key }}
+        {{- if .Values.api.smtp.host }}
+        - name: SMTP_HOST
+          value: {{ .Values.api.smtp.host }}
+        {{- else if .Values.smtp.enabled }}
+        - name: SMTP_HOST
+          value: {{ include "simpaas.smtp.name" . }}
+        {{- end }}
+        - name: SMTP_PORT
+          value: {{ .Values.api.smtp.port | quote }}
+        {{- if .Values.api.smtp.authEnabled }}
+        - name: SMTP_USER
+          valueFrom:
+            secretKeyRef:
+              name: {{ $smtpSecretName }}
+              key: {{ .Values.api.smtp.credentialsSecret.userKey }}
+        - name: SMTP_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ $smtpSecretName }}
+              key: {{ .Values.api.smtp.credentialsSecret.passwordKey }}
+        {{- end }}
+        - name: SMTP_TLS
+          value: {{ .Values.api.smtp.tls | quote }}
+        - name: SMTP_IMPLICIT_TLS
+          value: {{ .Values.api.smtp.implicitTls | quote }}
+        {{- if .Values.api.webappUrl }}
+        - name: WEBAPP_URL
+          value: {{ .Values.api.webappUrl }}
+        {{- else if and .Values.ingress.create .Values.webapp.ingress.enabled }}
+        - name: WEBAPP_URL
+        {{- if .Values.webapp.ingress.tls }}
+          value: https://{{ $webappFqdn }}
+        {{- else }}
+          value: http://{{ $webappFqdn }}
+        {{- end }}
+        {{- end }}
+        {{- include "simpaas.env" (dict "Values" .Values "Service" .Values.api) | nindent 8 }}
+        {{- with $env }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+        resources:
+          {{- toYaml .Values.api.resources | nindent 10 }}
+        {{- with $volumeMounts }}
+        volumeMounts:
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with $volumes }}
+      volumes:
+      {{- toYaml . | nindent 6 }}
+      {{- end }}
+      {{- with $nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

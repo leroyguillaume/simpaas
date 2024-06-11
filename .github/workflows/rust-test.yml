@@ -1,0 +1,34 @@
+name: rust-test
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref_name }}
+  cancel-in-progress: true
+
+on:
+  pull_request:
+    paths:
+    - src/**
+    - Cargo.*
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: test
+    runs-on: ubuntu-latest
+    steps:
+    - name: checkout
+      uses: actions/checkout@v4
+
+    - name: set up rust
+      uses: actions-rust-lang/setup-rust-toolchain@v1
+
+    - name: restore rust cache
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cargo/
+          target/
+        key: test_cargo
+
+    - name: test
+      run: cargo test

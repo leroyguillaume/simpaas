@@ -1,0 +1,36 @@
+name: lint
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref_name }}
+  cancel-in-progress: true
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  pre-commit:
+    name: pre-commit
+    runs-on: ubuntu-latest
+    steps:
+    - name: checkout
+      uses: actions/checkout@v4
+
+    - name: set up python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3'
+
+    - name: set up rust
+      uses: actions-rust-lang/setup-rust-toolchain@v1
+
+    - name: restore rust cache
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cargo/
+          target/
+        key: pre-commit_cargo
+
+    - name: run pre-commit
+      uses: pre-commit/action@v3.0.1

@@ -1,0 +1,30 @@
+common:
+  image:
+    tag: latest
+    pullPolicy: Always
+
+  logFilter: simpaas=debug,warn
+
+ingress:
+  create: true
+  domain: simpaas.k8s.orb.local
+
+opentelemetry-collector:
+  enabled: true
+
+smtp:
+  enabled: true
+
+  env:
+  - name: DISABLE_IPV6
+    value: '1'
+  - name: GMAIL_USER
+    valueFrom:
+      secretKeyRef:
+        name: simpaas-smtp
+        key: gmailUser
+  - name: GMAIL_PASSWORD
+    valueFrom:
+      secretKeyRef:
+        name: simpaas-smtp
+        key: gmailPassword

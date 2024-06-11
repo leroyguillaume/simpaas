@@ -1,0 +1,44 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: users.simpaas.gleroy.dev
+spec:
+  group: simpaas.gleroy.dev
+  names:
+    categories: []
+    kind: User
+    plural: users
+    shortNames: []
+    singular: user
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns: []
+    name: v1
+    schema:
+      openAPIV3Schema:
+        description: SimPaaS user
+        properties:
+          spec:
+            properties:
+              email:
+                description: Email.
+                nullable: true
+                type: string
+              password:
+                description: BCrypt-encoded password.
+                nullable: true
+                type: string
+              roles:
+                default: []
+                description: User roles.
+                items:
+                  type: string
+                type: array
+            type: object
+        required:
+        - spec
+        title: User
+        type: object
+    served: true
+    storage: true
+    subresources: {}

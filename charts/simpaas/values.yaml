@@ -1,0 +1,218 @@
+common:
+  image:
+    tag: ~
+    pullPolicy: IfNotPresent
+  imagePullSecrets: []
+
+  podAnnotations: {}
+  podLabels: {}
+
+  podSecurityContext:
+    fsGroup: 1000
+    runAsGroup: 1000
+    runAsUser: 1000
+  securityContext:
+    readOnlyRootFilesystem: true
+    runAsGroup: 1000
+    runAsNonRoot: true
+    runAsUser: 1000
+
+  env: []
+
+  volumeMounts: []
+  volumes: []
+
+  nodeSelector: {}
+
+  affinity: {}
+
+  tolerations: []
+
+  webappUrl: ~
+
+  otelCollectorUrl: http://simpaas-opentelemetry-collector:4317
+
+  logFilter: ~
+
+serviceAccount:
+  create: true
+  name: ~
+  automount: true
+
+rbac:
+  create: true
+  rules:
+  - apiGroups: ["*"]
+    resources: ["*"]
+    verbs: ["*"]
+
+api:
+  image:
+    repository: gleroy/simpaas-api
+    tag: ~
+  imagePullSecrets: []
+
+  podAnnotations: {}
+  podLabels: {}
+
+  podSecurityContext: {}
+  securityContext: {}
+
+  env: []
+
+  resoures: {}
+
+  volumeMounts: []
+  volumes: []
+
+  nodeSelector: {}
+
+  affinity: {}
+
+  tolerations: []
+
+  port: 8080
+
+  livenessProbe:
+    httpGet:
+      path: /_health
+      port: http
+
+  readinessProbe:
+    httpGet:
+      path: /_health
+      port: http
+
+  jwtSecret:
+    create: true
+    name: ~
+    key: secret
+
+  logFilter: ~
+
+  smtp:
+    host: ~
+    port: 25
+    tls: false
+    implicitTls: false
+    authEnabled: false
+    credentialsSecret:
+      name: ~
+      userKey: user
+      passwordKey: password
+
+  ingress:
+    enabled: true
+    domain: ~
+    fqdn: ~
+    tls: false
+    path: /api/(.*)
+    pathType: ImplementationSpecific
+
+  roleAdmin:
+    create: true
+    name: admin
+    permissions:
+    - createApp: {}
+    - inviteUsers: {}
+
+  admin:
+    create: true
+    name: admin
+    secret:
+      name: ~
+      key: password
+
+op:
+  image:
+    repository: gleroy/simpaas-op
+    tag: ~
+  imagePullSecrets: []
+
+  podAnnotations: {}
+  podLabels: {}
+
+  podSecurityContext: {}
+  securityContext: {}
+
+  env: []
+
+  resoures: {}
+
+  volumeMounts: []
+  volumes: []
+
+  nodeSelector: {}
+
+  affinity: {}
+
+  tolerations: []
+
+  chartValues: {}
+
+  logFilter: ~
+
+webapp:
+  port: 3000
+
+  ingress:
+    enabled: true
+    domain: ""
+    fqdn: ~
+    tls: false
+    path: /
+    pathType: ImplementationSpecific
+
+ingress:
+  create: false
+  className: ~
+  domain: ~
+  tlsSecretName: ~
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /$1
+
+cert-manager:
+  clusterIssuers: []
+
+opentelemetry-collector:
+  enabled: false
+
+  mode: deployment
+
+  image:
+    repository: otel/opentelemetry-collector
+
+  command:
+    name: otelcol
+
+smtp:
+  enabled: false
+
+  image:
+    repository: ixdotai/smtp
+    tag: v0.5.2
+  imagePullSecrets: []
+
+  podAnnotations: {}
+  podLabels: {}
+
+  podSecurityContext: {}
+  securityContext: {}
+
+  env: []
+
+  resoures: {}
+
+  volumeMounts: []
+  volumes: []
+
+  nodeSelector: {}
+
+  affinity: {}
+
+  tolerations: []
+
+  port: 25
+
+traefik:
+  middlewares: []

@@ -1,0 +1,86 @@
+{{- $chartValuesDir := "/opt/simpaas/etc" -}}
+{{- $podAnnotations := merge .Values.common.podAnnotations .Values.op.podAnnotations -}}
+{{- $podLabels := merge .Values.common.podLabels .Values.op.podLabels -}}
+{{- $imagePullSecrets := concat .Values.common.imagePullSecrets .Values.op.imagePullSecrets -}}
+{{- $podSecurityContext := merge .Values.common.podSecurityContext .Values.op.podSecurityContext -}}
+{{- $securityContext := merge .Values.common.securityContext .Values.op.securityContext -}}
+{{- $env := concat .Values.common.env .Values.op.env -}}
+{{- $volumeMounts := concat .Values.common.volumeMounts .Values.op.volumeMounts -}}
+{{- $volumes := concat .Values.common.volumes .Values.op.volumes -}}
+{{- $nodeSelector := merge .Values.common.nodeSelector .Values.op.nodeSelector -}}
+{{- $affinity := merge .Values.common.affinity .Values.op.affinity -}}
+{{- $tolerations := concat .Values.common.tolerations .Values.op.tolerations -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "simpaas.op.name" . }}
+  labels:
+    {{- include "simpaas.op.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.op.replicas }}
+  selector:
+    matchLabels:
+      {{- include "simpaas.op.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      {{- with $podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "simpaas.op.labels" . | nindent 8 }}
+        {{- with $podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- with $imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "simpaas.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml $podSecurityContext | nindent 8 }}
+      containers:
+      - name: op
+        securityContext:
+          {{- toYaml $securityContext | nindent 12 }}
+        image: {{ printf "%s:%s" .Values.op.image.repository (include "simpaas.op.tag" .) }}
+        imagePullPolicy: {{ default .Values.common.image.pullPolicy .Values.op.image.pullPolicy }}
+        env:
+        - name: CHART_VALUES
+          value: {{ printf "%s/values.yaml" $chartValuesDir }}
+        {{- include "simpaas.env" (dict "Values" .Values "Service" .Values.api) | nindent 8 }}
+        {{- with $env }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+        resources:
+          {{- toYaml .Values.op.resources | nindent 10 }}
+        volumeMounts:
+        - name: op-config
+          mountPath: {{ $chartValuesDir }}
+        - name: tmp
+          mountPath: /tmp
+        {{- with $volumeMounts }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      volumes:
+      - name: op-config
+        configMap:
+          name: {{ include "simpaas.op.name" . }}
+      - name: tmp
+        emptyDir: {}
+      {{- with $volumes }}
+      {{- toYaml . | nindent 6 }}
+      {{- end }}
+      {{- with $nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

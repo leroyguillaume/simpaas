@@ -1,0 +1,39 @@
+{{- range $service := .Values.services }}
+{{- range $expose := default list $service.expose }}
+{{- if $expose.ingress }}
+{{- $vars := dict "Chart" $.Chart "Expose" $expose "Release" $.Release "Service" $service  -}}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "simpaas-app.service.name" $vars }}
+  labels:
+    {{- include "simpaas-app.service.labels" $vars | nindent 4 }}
+  {{- with $.Values.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- if $.Values.ingress.className }}
+  ingressClassName: {{ $.Values.ingress.className }}
+  {{- end }}
+  {{- if $expose.ingress.tls }}
+  tls:
+  - secretName: {{ include "simpaas-app.service.tlsSecretName" $vars }}
+    hosts:
+    - {{ $expose.ingress.domain }}
+  {{- end }}
+  rules:
+  - host: {{ $expose.ingress.domain }}
+    http:
+      paths:
+      - path: /
+        pathType: ImplementationSpecific
+        backend:
+          service:
+            name: {{ include "simpaas-app.service.name" $vars }}
+            port:
+              number: {{ $expose.port }}
+---
+{{- end }}
+{{- end }}
+{{- end }}

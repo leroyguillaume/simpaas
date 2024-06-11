@@ -1,0 +1,31 @@
+serviceAccount:
+  create: true
+  name: ~
+  automount: true
+
+ingress:
+  className: ~
+  annotations: {}
+
+common:
+  imagePullPolicy: IfNotPresent
+  imagePullSecrets: []
+
+  podAnnotations: {}
+  podLabels: {}
+
+  podSecurityContext: {}
+  securityContext: {}
+
+  env: []
+
+  volumeMounts: []
+  volumes: []
+
+  nodeSelector: {}
+
+  affinity: {}
+
+  tolerations: []
+
+services: []

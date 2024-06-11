@@ -1,0 +1,93 @@
+{{- range $service := .Values.services }}
+{{- $podAnnotations := merge $.Values.common.podAnnotations (default dict $service.values.podAnnotations) -}}
+{{- $podLabels := merge $.Values.common.podLabels (default dict $service.values.podLabels) -}}
+{{- $imagePullSecrets := concat $.Values.common.imagePullSecrets (default list $service.values.imagePullSecrets) -}}
+{{- $podSecurityContext := merge $.Values.common.podSecurityContext (default dict $service.values.podSecurityContext) -}}
+{{- $securityContext := merge $.Values.common.securityContext (default dict $service.values.securityContext) -}}
+{{- $env := concat $.Values.common.env (default list $service.values.env) -}}
+{{- $volumeMounts := concat $.Values.common.volumeMounts (default list $service.values.volumeMounts) -}}
+{{- $volumes := concat $.Values.common.volumes (default list $service.values.volumes) -}}
+{{- $nodeSelector := merge $.Values.common.nodeSelector (default dict $service.values.nodeSelector) -}}
+{{- $affinity := merge $.Values.common.affinity (default dict $service.values.affinity) -}}
+{{- $tolerations := concat $.Values.common.tolerations (default list $service.values.tolerations) -}}
+{{- $vars := dict "Chart" $.Chart "Release" $.Release "Service" $service "Values" $.Values  -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "simpaas-app.service.name" $vars }}
+  labels:
+    {{- include "simpaas-app.service.labels" $vars | nindent 4 }}
+spec:
+  replicas: {{ default 1 $service.replicas }}
+  selector:
+    matchLabels:
+      {{- include "simpaas-app.service.selectorLabels" $vars | nindent 6 }}
+  template:
+    metadata:
+      {{- with $podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "simpaas-app.service.labels" $vars | nindent 8 }}
+        {{- with $podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- with $imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "simpaas-app.serviceAccountName" $vars }}
+      securityContext:
+        {{- toYaml $podSecurityContext | nindent 8 }}
+      containers:
+      - name: {{ $service.name }}
+        securityContext:
+          {{- toYaml $securityContext | nindent 12 }}
+        image: {{ printf "%s:%s" $service.image $service.tag }}
+        imagePullPolicy: {{ default $.Values.common.imagePullPolicy $service.values.imagePullPolicy }}
+        {{- with $service.values.command }}
+        command:
+        {{ toYaml . | nindent 8 }}
+        {{- end }}
+        {{- with $service.values.args }}
+        args:
+        {{ toYaml . | nindent 8 }}
+        {{- end }}
+        {{- with $service.values.livenessProbe }}
+        livenessProbe:
+          {{ toYaml . | nindent 10 }}
+        {{- end }}
+        {{- with $service.values.readinessProbe }}
+        readinessProbe:
+          {{ toYaml . | nindent 10 }}
+        {{- end }}
+        {{- with $env }}
+        env:
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+        resources:
+          {{- toYaml (default dict $service.values.resources) | nindent 10 }}
+        {{- with $volumeMounts }}
+        volumeMounts:
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with $volumes }}
+      volumes:
+      {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+---
+{{- end }}

@@ -1,0 +1,14 @@
+{{- range $middleware := .Values.traefik.middlewares }}
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: {{ $middleware.name }}
+  labels:
+    {{- include "simpaas.labels" $ | nindent 4 }}
+    {{- with $middleware.labels }}
+    {{- toYaml .| nindent 4 }}
+    {{- end }}
+spec:
+  {{- toYaml $middleware.spec | nindent 2 }}
+---
+{{- end }}

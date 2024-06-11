@@ -1,0 +1,55 @@
+{{- if .Values.ingress.create }}
+{{- $fqdns := dict -}}
+{{- $tlsHosts := list -}}
+{{- $apiIngress := dict "Ingress" .Values.api.ingress "Service" (dict "Name" (include "simpaas.api.name" .) "Port" .Values.api.port) "Values" .Values -}}
+{{- $webappIngress := dict "Ingress" .Values.webapp.ingress "Service" (dict "Name" (include "simpaas.webapp.name" .) "Port" .Values.webapp.port) "Values" .Values -}}
+{{- $ingresses := list $apiIngress $webappIngress -}}
+{{- range $ingress := $ingresses -}}
+{{- if $ingress.Ingress.enabled -}}
+{{- $fqdn := include "simpaas.fqdn" $ingress -}}
+{{- $ingresses := get $fqdns $fqdn -}}
+{{- if not $ingresses -}}
+{{- $ingresses = list -}}
+{{- end -}}
+{{- $fqdns = set $fqdns $fqdn (append $ingresses $ingress) -}}
+{{- if $ingress.Ingress.tls -}}
+{{- $tlsHosts = append $tlsHosts $fqdn -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ .Release.Name }}
+  labels:
+    {{- include "simpaas.labels" . | nindent 4 }}
+  {{- with .Values.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- if .Values.ingress.className }}
+  ingressClassName: {{ .Values.ingress.className }}
+  {{- end }}
+  {{- with $tlsHosts | uniq }}
+  tls:
+  - secretName: {{ default (printf "%s-tls" $.Release.Name) $.Values.ingress.tlsSecretName }}
+    hosts:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  rules:
+  {{- range $fqdn, $ingresses := $fqdns }}
+  - host: {{ $fqdn }}
+    http:
+      paths:
+      {{- range $ingress := $ingresses }}
+      - path: {{ $ingress.Ingress.path }}
+        pathType: {{ $ingress.Ingress.pathType }}
+        backend:
+          service:
+            name: {{ $ingress.Service.Name }}
+            port:
+              number: {{ $ingress.Service.Port }}
+      {{- end }}
+  {{- end }}
+{{- end }}

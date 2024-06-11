@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "simpaas.op.name" . }}
+  labels:
+    {{- include "simpaas.op.labels" . | nindent 4 }}
+data:
+  values.yaml: |
+    {{ toYaml .Values.op.chartValues | nindent 4 }}

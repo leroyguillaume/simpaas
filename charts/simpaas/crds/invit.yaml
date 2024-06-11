@@ -1,0 +1,45 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: invitations.simpaas.gleroy.dev
+spec:
+  group: simpaas.gleroy.dev
+  names:
+    categories: []
+    kind: Invitation
+    plural: invitations
+    shortNames: []
+    singular: invitation
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns: []
+    name: v1
+    schema:
+      openAPIV3Schema:
+        description: SimPaaS user invitation
+        properties:
+          spec:
+            properties:
+              from:
+                description: User who created the invitation.
+                type: string
+              roles:
+                description: User roles.
+                items:
+                  type: string
+                type: array
+              to:
+                description: Invited user email.
+                type: string
+            required:
+            - from
+            - roles
+            - to
+            type: object
+        required:
+        - spec
+        title: Invitation
+        type: object
+    served: true
+    storage: true
+    subresources: {}

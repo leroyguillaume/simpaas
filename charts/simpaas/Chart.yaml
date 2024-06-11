@@ -1,0 +1,11 @@
+apiVersion: v2
+name: simpaas
+description: A Helm chart for SimPaaS
+type: application
+version: 0.1.0
+appVersion: 0.1.0
+dependencies:
+- name: opentelemetry-collector
+  repository: https://open-telemetry.github.io/opentelemetry-helm-charts
+  version: ~0
+  condition: opentelemetry-collector.enabled

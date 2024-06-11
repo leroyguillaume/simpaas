@@ -1,0 +1,13 @@
+{{- if .Values.api.roleAdmin.create }}
+apiVersion: simpaas.gleroy.dev/v1
+kind: Role
+metadata:
+  name: {{ .Values.api.roleAdmin.name }}
+  labels:
+    {{- include "simpaas.labels" . | nindent 4 }}
+spec:
+  {{- with .Values.api.roleAdmin.permissions }}
+  permissions:
+  {{- toYaml . | nindent 2 }}
+  {{- end }}
+{{- end }}
