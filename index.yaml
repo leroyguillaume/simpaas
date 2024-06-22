@@ -3,14 +3,14 @@ entries:
   simpaas:
   - apiVersion: v2
     appVersion: 0.1.0
-    created: "2024-06-22T12:37:12.239099465Z"
+    created: "2024-06-22T12:45:00.440631688Z"
     dependencies:
     - condition: opentelemetry-collector.enabled
       name: opentelemetry-collector
       repository: https://open-telemetry.github.io/opentelemetry-helm-charts
       version: ~0
     description: A Helm chart for SimPaaS
-    digest: 69072b6451055947343e907411fa0cac345ff63b86449dd64e60c8e30928024c
+    digest: ab40dfa3623a110cec3d10b66977e3b561f3a8125eaa41e6234b08e70f2fd8fe
     name: simpaas
     type: application
     urls:
@@ -18,12 +18,12 @@ entries:
     version: 0.1.0
   simpaas-app:
   - apiVersion: v2
-    created: "2024-06-22T12:37:12.239309259Z"
+    created: "2024-06-22T12:45:00.44103831Z"
     description: A Helm chart for SimPaaS application
-    digest: 9388c2348f4409ad3d623c8a80f6317efc686c7c9e5be3f23899a8e9c02910c5
+    digest: 8bc605b491720c9ffb0b4ee3b38581aa123f483c71b4d6158906565ebebb4712
     name: simpaas-app
     type: application
     urls:
     - simpaas-app-0.1.0.tgz
     version: 0.1.0
-generated: "2024-06-22T12:37:12.235297538Z"
+generated: "2024-06-22T12:45:00.434447734Z"
