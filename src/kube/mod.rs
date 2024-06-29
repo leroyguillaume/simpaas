@@ -50,6 +50,20 @@ pub enum Chart {
     BuiltIn {},
 }
 
+impl Default for Chart {
+    fn default() -> Self {
+        Self::BuiltIn {}
+    }
+}
+
+impl Display for Chart {
+    fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
+        match self {
+            Self::BuiltIn {} => write!(f, "built_in"),
+        }
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, JsonSchema, Serialize, Validate)]
 #[serde(rename_all = "camelCase")]
 pub struct Expose {
@@ -188,6 +202,8 @@ pub struct UserSpec {
 
 pub trait KubeClient: Send + Sync {
     fn delete_invitation(&self, token: &str) -> impl Future<Output = Result> + Send;
+
+    fn delete_namespace(&self, namespace: &str) -> impl Future<Output = Result> + Send;
 
     fn get_invitation(
         &self,

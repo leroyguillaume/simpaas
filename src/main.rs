@@ -7,6 +7,7 @@ use std::{
 use ::kube::CustomResourceExt;
 use api::{start_api, ApiContext};
 use clap::{Parser, Subcommand};
+use deploy::helm::{HelmDeployer, HelmDeployerArgs};
 use helm::cli::{CliHelmClient, CliHelmClientArgs};
 use jwt::default::{DefaultJwtEncoder, DefaultJwtEncoderArgs};
 use kube::{api::ApiKubeClient, App, Invitation, Role, User};
@@ -35,6 +36,7 @@ use tracing_subscriber::{
 };
 
 mod api;
+mod deploy;
 mod helm;
 mod jwt;
 mod kube;
@@ -60,9 +62,11 @@ async fn main() -> anyhow::Result<()> {
         Command::Crd { cmd } => cmd.print(),
         Command::Op(args) => {
             let kube = ::kube::Client::try_default().await?;
-            let api = ::kube::Api::default_namespaced(kube);
+            let api = ::kube::Api::default_namespaced(kube.clone());
+            let helm = CliHelmClient::new(args.helm);
             let ctx = OpContext {
-                helm: CliHelmClient::new(args.helm),
+                deployer: HelmDeployer::new(args.deployer, helm),
+                kube: ApiKubeClient::new(kube),
                 requeue_delay: Duration::from_secs(args.requeue_delay),
             };
             start_op(api, ctx).await
@@ -168,6 +172,8 @@ impl Default for ApiArgs {
 #[derive(clap::Args, Clone, Debug, Eq, PartialEq)]
 struct OpArgs {
     #[command(flatten)]
+    deployer: HelmDeployerArgs,
+    #[command(flatten)]
     helm: CliHelmClientArgs,
     #[arg(
         long,
@@ -181,6 +187,7 @@ struct OpArgs {
 impl Default for OpArgs {
     fn default() -> Self {
         Self {
+            deployer: Default::default(),
             helm: Default::default(),
             requeue_delay: 10,
         }
