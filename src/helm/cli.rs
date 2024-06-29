@@ -1,14 +1,12 @@
 use std::{
-    fs::File,
     path::PathBuf,
     process::{ExitStatus, Output},
 };
 
-use tempdir::TempDir;
 use tokio::process::Command;
 use tracing::{debug, error, instrument, Level};
 
-use crate::kube::App;
+use crate::kube::{App, Chart};
 
 use super::{HelmClient, Result};
 
@@ -25,17 +23,13 @@ macro_rules! log_output {
 pub enum Error {
     #[error("helm {0}")]
     Command(ExitStatus),
+    #[error("invalid unicode")]
+    InvalidUnicode,
     #[error("i/o error: {0}")]
     Io(
         #[from]
         #[source]
         std::io::Error,
-    ),
-    #[error("yaml error: {0}")]
-    Yaml(
-        #[from]
-        #[source]
-        serde_yaml::Error,
     ),
 }
 
@@ -56,12 +50,6 @@ pub struct CliHelmClientArgs {
         long_help = "Path to built-in simpaas-app chart"
     )]
     pub chart_path: PathBuf,
-    #[arg(
-        long,
-        env,
-        long_help = "Path to YAML file of default values of simpaas-app chart"
-    )]
-    pub chart_values: Option<PathBuf>,
 }
 
 impl Default for CliHelmClientArgs {
@@ -69,7 +57,6 @@ impl Default for CliHelmClientArgs {
         Self {
             bin: "helm".into(),
             chart_path: "charts/simpaas-app".into(),
-            chart_values: None,
         }
     }
 }
@@ -111,31 +98,22 @@ impl HelmClient for CliHelmClient {
         Self::handle_output(output)
     }
 
-    #[instrument("helm_upgrade", skip(self, app), fields(app.namespace = app.spec.namespace, app.release = app.spec.release))]
-    async fn upgrade(&self, app: &App) -> Result {
-        debug!("creating temporary file");
-        let dir = TempDir::new(&app.spec.release)?;
-        let filepath = dir.path().join("values.yaml");
-        let mut file = File::create(&filepath)?;
-        debug!("dumping app into yaml");
-        serde_yaml::to_writer(&mut file, &app.spec)?;
-        debug!("running helm upgrade");
+    #[instrument("helm_upgrade", skip(self, app, filepaths), fields(app.chart = %app.spec.chart, app.namespace = app.spec.namespace, app.release = app.spec.release))]
+    async fn upgrade(&self, app: &App, filepaths: &[PathBuf]) -> Result {
+        let chart = match &app.spec.chart {
+            Chart::BuiltIn {} => self.0.chart_path.to_str().ok_or(Error::InvalidUnicode)?,
+        };
         let mut cmd = Command::new(&self.0.bin);
         cmd.arg("upgrade")
             .arg("-n")
             .arg(&app.spec.namespace)
             .arg("--create-namespace")
             .arg("--install");
-        if let Some(path) = &self.0.chart_values {
+        for path in filepaths {
             cmd.arg("--values").arg(path);
         }
-        let output = cmd
-            .arg("--values")
-            .arg(&filepath)
-            .arg(&app.spec.release)
-            .arg(&self.0.chart_path)
-            .output()
-            .await?;
+        debug!("running helm upgrade");
+        let output = cmd.arg(&app.spec.release).arg(chart).output().await?;
         Self::handle_output(output)
     }
 }
@@ -149,11 +127,5 @@ impl From<Error> for super::Error {
 impl From<std::io::Error> for super::Error {
     fn from(err: std::io::Error) -> Self {
         Error::Io(err).into()
-    }
-}
-
-impl From<serde_yaml::Error> for super::Error {
-    fn from(err: serde_yaml::Error) -> Self {
-        Error::Yaml(err).into()
     }
 }

@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use futures::Future;
 
 use crate::kube::App;
@@ -13,5 +15,5 @@ pub struct Error(#[source] pub Box<dyn std::error::Error + Send + Sync>);
 pub trait HelmClient: Send + Sync {
     fn uninstall(&self, app: &App) -> impl Future<Output = Result> + Send;
 
-    fn upgrade(&self, app: &App) -> impl Future<Output = Result> + Send;
+    fn upgrade(&self, app: &App, filepaths: &[PathBuf]) -> impl Future<Output = Result> + Send;
 }

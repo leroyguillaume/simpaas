@@ -1,3 +1,4 @@
+use k8s_openapi::api::core::v1::Namespace;
 use kube::{
     api::{DeleteParams, Patch, PatchParams},
     Api, Client, Error,
@@ -26,6 +27,15 @@ impl KubeClient for ApiKubeClient {
         Ok(())
     }
 
+    #[instrument(skip(self, namespace), fields(app.namespace = namespace))]
+    async fn delete_namespace(&self, namespace: &str) -> Result {
+        let api: Api<Namespace> = Api::all(self.0.clone());
+        let params = DeleteParams::background();
+        debug!("deleting namespace");
+        api.delete(namespace, &params).await?;
+        Ok(())
+    }
+
     #[instrument(skip(self, token), fields(invit.token = token))]
     async fn get_invitation(&self, token: &str) -> Result<Option<Invitation>> {
         let api: Api<Invitation> = Api::default_namespaced(self.0.clone());
@@ -47,7 +57,7 @@ impl KubeClient for ApiKubeClient {
         api.get_opt(name).await.map_err(super::Error::from)
     }
 
-    #[instrument(skip(self, name, app), fields(app.name = name, app.namespace = app.spec.namespace, app.release = app.spec.release))]
+    #[instrument(skip(self, name, app), fields(app.name = name))]
     async fn patch_app(&self, name: &str, app: &App) -> Result {
         let api: Api<App> = Api::default_namespaced(self.0.clone());
         let params = PatchParams::apply(CARGO_PKG_NAME);

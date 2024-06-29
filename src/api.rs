@@ -155,7 +155,8 @@ impl OperationOutput for Error {
 #[serde(rename_all = "camelCase")]
 struct CreateAppRequest {
     /// Chart to use to install app.
-    chart: Option<Chart>,
+    #[serde(default)]
+    chart: Chart,
     /// Name.
     #[serde(deserialize_with = "string_trim")]
     #[validate(length(min = 1))]
@@ -296,18 +297,13 @@ async fn create_app<J: JwtEncoder, K: KubeClient, M: MailSender, P: PasswordEnco
     let namespace = req.namespace.unwrap_or_else(|| req.name.clone());
     let release = req.release.unwrap_or_else(|| req.name.clone());
     let spec = AppSpec {
-        chart: req.chart.unwrap_or(Chart::BuiltIn {}),
+        chart: req.chart,
         namespace,
         release,
         services: req.services,
         values: req.values,
     };
-    let span = info_span!(
-        "create_app",
-        app.name = req.name,
-        app.namespace = spec.namespace,
-        app.release = spec.release,
-    );
+    let span = info_span!("create_app", app.name = req.name,);
     async {
         debug!("creating app");
         let app = App {

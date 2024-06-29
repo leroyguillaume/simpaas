@@ -8,31 +8,32 @@ use kube::{
 use tracing::{debug, error, info, info_span, Instrument};
 
 use crate::{
-    helm::{self, HelmClient},
-    kube::App,
+    deploy::Deployer,
+    kube::{App, KubeClient},
     SignalListener,
 };
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("{0}")]
-    Helm(
+    Deployer(
         #[from]
         #[source]
-        helm::Error,
+        crate::deploy::Error,
     ),
     #[error("resource doesn't have name")]
     NoName,
 }
 
-pub struct OpContext<H: HelmClient> {
-    pub helm: H,
+pub struct OpContext<D: Deployer, K: KubeClient> {
+    pub deployer: D,
+    pub kube: K,
     pub requeue_delay: Duration,
 }
 
-pub async fn start_op<H: HelmClient + 'static>(
+pub async fn start_op<D: Deployer + 'static, K: KubeClient + 'static>(
     api: Api<App>,
-    ctx: OpContext<H>,
+    ctx: OpContext<D, K>,
 ) -> anyhow::Result<()> {
     let mut sig = SignalListener::new()?;
     info!("operator started");
@@ -54,38 +55,28 @@ pub async fn start_op<H: HelmClient + 'static>(
     Ok(())
 }
 
-fn on_error<H: HelmClient>(app: Arc<App>, err: &::kube::Error, ctx: Arc<OpContext<H>>) -> Action {
+fn on_error<D: Deployer, K: KubeClient>(
+    app: Arc<App>,
+    err: &::kube::Error,
+    ctx: Arc<OpContext<D, K>>,
+) -> Action {
     let name = app.metadata.name.as_deref().unwrap_or("");
-    error!(
-        app.name = name,
-        app.namespace = app.spec.namespace,
-        app.release = app.spec.release,
-        "{err}"
-    );
+    error!(app.name = name, "{err}");
     Action::requeue(ctx.requeue_delay)
 }
 
-async fn reconcile<H: HelmClient>(
+async fn reconcile<D: Deployer, K: KubeClient>(
     app: Arc<App>,
-    ctx: Arc<OpContext<H>>,
+    ctx: Arc<OpContext<D, K>>,
 ) -> Result<Action, ::kube::Error> {
     let name = app.metadata.name.as_ref().ok_or(Error::NoName)?;
-    let span = info_span!(
-        "reconcile",
-        app.name = name,
-        app.namespace = app.spec.namespace,
-        app.release = app.spec.release
-    );
+    let span = info_span!("reconcile", app.name = name,);
     async {
         debug!("reconciling app");
         if app.metadata.deletion_timestamp.is_some() {
-            info!("uninstalling app");
-            ctx.helm.uninstall(&app).await?;
-            info!("app uninstalled");
+            ctx.deployer.undeploy(name, &app, &ctx.kube).await?;
         } else {
-            info!("deploying app");
-            ctx.helm.upgrade(&app).await?;
-            info!("app deployed");
+            ctx.deployer.deploy(name, &app, &ctx.kube).await?;
         }
         Ok(Action::await_change())
     }
@@ -99,8 +90,8 @@ impl From<Error> for ::kube::Error {
     }
 }
 
-impl From<helm::Error> for ::kube::Error {
-    fn from(err: helm::Error) -> Self {
-        Error::Helm(err).into()
+impl From<crate::deploy::Error> for ::kube::Error {
+    fn from(err: crate::deploy::Error) -> Self {
+        Error::Deployer(err).into()
     }
 }
