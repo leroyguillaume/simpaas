@@ -3,7 +3,7 @@ use kube::{
     api::{DeleteParams, Patch, PatchParams},
     Api, Client, Error,
 };
-use tracing::{debug, instrument};
+use tracing::{debug, instrument, warn};
 
 use crate::CARGO_PKG_NAME;
 
@@ -30,9 +30,13 @@ impl KubeClient for ApiKubeClient {
     #[instrument(skip(self, namespace), fields(app.namespace = namespace))]
     async fn delete_namespace(&self, namespace: &str) -> Result {
         let api: Api<Namespace> = Api::all(self.0.clone());
-        let params = DeleteParams::background();
-        debug!("deleting namespace");
-        api.delete(namespace, &params).await?;
+        if api.get_opt(namespace).await?.is_some() {
+            let params = DeleteParams::background();
+            debug!("deleting namespace");
+            api.delete(namespace, &params).await?;
+        } else {
+            warn!("namespace can't be deleted because it doesn't exist");
+        }
         Ok(())
     }
 

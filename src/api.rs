@@ -27,7 +27,7 @@ use crate::{
     jwt::JwtEncoder,
     kube::{
         App, AppSpec, Chart, Invitation, InvitationSpec, KubeClient, Permission, Service, User,
-        UserSpec,
+        UserSpec, FINALIZER,
     },
     mail::MailSender,
     pwd::PasswordEncoder,
@@ -308,6 +308,7 @@ async fn create_app<J: JwtEncoder, K: KubeClient, M: MailSender, P: PasswordEnco
         debug!("creating app");
         let app = App {
             metadata: ObjectMeta {
+                finalizers: Some(vec![FINALIZER.into()]),
                 name: Some(req.name.clone()),
                 ..Default::default()
             },

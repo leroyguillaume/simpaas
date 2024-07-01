@@ -2,6 +2,7 @@ use std::{sync::Arc, time::Duration};
 
 use futures::StreamExt;
 use kube::{
+    api::ObjectMeta,
     runtime::{controller::Action, Controller},
     Api,
 };
@@ -9,7 +10,7 @@ use tracing::{debug, error, info, info_span, Instrument};
 
 use crate::{
     deploy::Deployer,
-    kube::{App, KubeClient},
+    kube::{App, KubeClient, FINALIZER},
     SignalListener,
 };
 
@@ -20,6 +21,12 @@ pub enum Error {
         #[from]
         #[source]
         crate::deploy::Error,
+    ),
+    #[error("{0}")]
+    Kube(
+        #[from]
+        #[source]
+        crate::kube::Error,
     ),
     #[error("resource doesn't have name")]
     NoName,
@@ -74,7 +81,20 @@ async fn reconcile<D: Deployer, K: KubeClient>(
     async {
         debug!("reconciling app");
         if app.metadata.deletion_timestamp.is_some() {
-            ctx.deployer.undeploy(name, &app, &ctx.kube).await?;
+            if let Some(finalizers) = &app.metadata.finalizers {
+                if finalizers.iter().any(|finalizer| finalizer == FINALIZER) {
+                    let mut app = app.as_ref().clone();
+                    ctx.deployer.undeploy(name, &app, &ctx.kube).await?;
+                    let mut finalizers = finalizers.clone();
+                    finalizers.retain(|finalizer| finalizer != FINALIZER);
+                    app.metadata = ObjectMeta {
+                        finalizers: Some(finalizers),
+                        managed_fields: None,
+                        ..app.metadata
+                    };
+                    ctx.kube.patch_app(name, &app).await?;
+                }
+            }
         } else {
             ctx.deployer.deploy(name, &app, &ctx.kube).await?;
         }
@@ -93,5 +113,11 @@ impl From<Error> for ::kube::Error {
 impl From<crate::deploy::Error> for ::kube::Error {
     fn from(err: crate::deploy::Error) -> Self {
         Error::Deployer(err).into()
+    }
+}
+
+impl From<crate::kube::Error> for ::kube::Error {
+    fn from(err: crate::kube::Error) -> Self {
+        Error::Kube(err).into()
     }
 }

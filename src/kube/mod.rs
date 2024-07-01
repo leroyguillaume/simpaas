@@ -13,6 +13,8 @@ use validator::Validate;
 
 pub mod api;
 
+pub const FINALIZER: &str = "simpaas.gleroy.dev/finalizer";
+
 pub type Result<T = ()> = std::result::Result<T, Error>;
 
 #[derive(Debug, thiserror::Error)]

@@ -92,6 +92,7 @@ impl HelmClient for CliHelmClient {
             .arg("uninstall")
             .arg("-n")
             .arg(&app.spec.namespace)
+            .arg("--ignore-not-found")
             .arg(&app.spec.release)
             .output()
             .await?;
