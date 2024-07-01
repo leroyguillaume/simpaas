@@ -1,13 +1,16 @@
 {{- if .Values.api.admin.create }}
+{{- $secretName := default (printf "%s-%s" .Release.Name .Values.api.admin.name) .Values.api.admin.secret.name -}}
+{{- $secret := lookup "v1" "Secret" .Release.Namespace $secretName  -}}
 {{- $password := randAlphaNum 12 -}}
+{{- if $secret -}}
+{{- $password = (index $secret.data .Values.api.admin.secret.key) | b64dec -}}
+{{- end -}}
 apiVersion: v1
 kind: Secret
 metadata:
-  name: {{ default (printf "%s-%s" .Release.Name .Values.api.admin.name) .Values.api.admin.secret.name }}
+  name: {{ $secretName }}
   labels:
     {{- include "simpaas.labels" . | nindent 4 }}
-  annotations:
-    helm.sh/hook: post-install
 data:
   {{ .Values.api.admin.secret.key }}: {{ $password | b64enc  }}
 ---
@@ -17,8 +20,6 @@ metadata:
   name: {{ .Values.api.admin.name }}
   labels:
     {{- include "simpaas.labels" . | nindent 4 }}
-  annotations:
-    helm.sh/hook: post-install
 spec:
   password: {{ trimPrefix (printf "%s:" .Values.api.admin.name) (htpasswd .Values.api.admin.name $password) }}
   {{- if .Values.api.roleAdmin.create }}
