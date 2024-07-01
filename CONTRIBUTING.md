@@ -35,7 +35,7 @@ You need to create [app password](https://support.google.com/accounts/answer/185
 ```bash
 export GMAIL_USER=your email
 export GMAIL_PASSWORD=your token
-./sh/orbstack-install.sh
+./sh/local-install.sh
 ```
 
 ### API

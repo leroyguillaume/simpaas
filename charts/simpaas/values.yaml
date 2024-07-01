@@ -47,6 +47,8 @@ rbac:
     verbs: ["*"]
 
 api:
+  replicas: 1
+
   image:
     repository: gleroy/simpaas-api
     tag: ~
@@ -124,6 +126,8 @@ api:
       key: password
 
 op:
+  replicas: 1
+
   image:
     repository: gleroy/simpaas-op
     tag: ~

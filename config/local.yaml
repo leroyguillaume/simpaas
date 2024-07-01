@@ -5,6 +5,12 @@ common:
 
   logFilter: simpaas=debug,warn
 
+api:
+  replicas: 0
+
+op:
+  replicas: 0
+
 ingress:
   create: true
   domain: simpaas.k8s.orb.local
