@@ -36,8 +36,6 @@ pub struct AppSpec {
     pub chart: Chart,
     /// Namespace.
     pub namespace: String,
-    /// Release name.
-    pub release: String,
     /// List of app services.
     pub services: Vec<Service>,
     /// Helm chart values.
@@ -74,6 +72,7 @@ pub struct Expose {
     pub ingress: Option<Ingress>,
     /// The port to expose.
     pub port: u16,
+    /// The protocol.
     #[serde(default = "default_protocol", deserialize_with = "string_trim")]
     #[validate(length(min = 1))]
     pub protocol: String,
@@ -192,20 +191,31 @@ pub struct Service {
 #[serde(rename_all = "camelCase")]
 pub struct UserSpec {
     /// Email.
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub email: Option<String>,
     /// BCrypt-encoded password.
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub password: Option<String>,
     /// User roles.
     #[serde(default)]
     pub roles: BTreeSet<String>,
 }
 
+pub struct DomainUsage {
+    /// App that owns domain.
+    pub app: Option<String>,
+    /// Domain.
+    pub domain: String,
+}
+
 pub trait KubeClient: Send + Sync {
     fn delete_invitation(&self, token: &str) -> impl Future<Output = Result> + Send;
 
     fn delete_namespace(&self, namespace: &str) -> impl Future<Output = Result> + Send;
+
+    fn domain_usages(
+        &self,
+        name: &str,
+        svcs: &[Service],
+    ) -> impl Future<Output = Result<Vec<DomainUsage>>> + Send;
 
     fn get_invitation(
         &self,

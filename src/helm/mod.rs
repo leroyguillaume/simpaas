@@ -13,7 +13,12 @@ pub type Result<T = ()> = std::result::Result<T, Error>;
 pub struct Error(#[source] pub Box<dyn std::error::Error + Send + Sync>);
 
 pub trait HelmClient: Send + Sync {
-    fn uninstall(&self, app: &App) -> impl Future<Output = Result> + Send;
+    fn uninstall(&self, name: &str, app: &App) -> impl Future<Output = Result> + Send;
 
-    fn upgrade(&self, app: &App, filepaths: &[PathBuf]) -> impl Future<Output = Result> + Send;
+    fn upgrade(
+        &self,
+        name: &str,
+        app: &App,
+        filepaths: &[PathBuf],
+    ) -> impl Future<Output = Result> + Send;
 }

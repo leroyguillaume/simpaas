@@ -33,9 +33,6 @@ spec:
               namespace:
                 description: Namespace.
                 type: string
-              release:
-                description: Release name.
-                type: string
               services:
                 description: List of app services.
                 items:
@@ -67,6 +64,7 @@ spec:
                             type: integer
                           protocol:
                             default: TCP
+                            description: The protocol.
                             minLength: 1
                             type: string
                         required:
@@ -110,7 +108,6 @@ spec:
             required:
             - chart
             - namespace
-            - release
             - services
             type: object
         required:

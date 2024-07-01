@@ -85,22 +85,22 @@ impl CliHelmClient {
 }
 
 impl HelmClient for CliHelmClient {
-    #[instrument("helm_uninstall", skip(self, app), fields(app.namespace = app.spec.namespace, app.release = app.spec.release))]
-    async fn uninstall(&self, app: &App) -> Result {
+    #[instrument("helm_uninstall", skip(self, name, app), fields(app.name = name, app.namespace = app.spec.namespace))]
+    async fn uninstall(&self, name: &str, app: &App) -> Result {
         debug!("running helm uninstall");
         let output = Command::new(&self.0.bin)
             .arg("uninstall")
             .arg("-n")
             .arg(&app.spec.namespace)
             .arg("--ignore-not-found")
-            .arg(&app.spec.release)
+            .arg(name)
             .output()
             .await?;
         Self::handle_output(output)
     }
 
-    #[instrument("helm_upgrade", skip(self, app, filepaths), fields(app.chart = %app.spec.chart, app.namespace = app.spec.namespace, app.release = app.spec.release))]
-    async fn upgrade(&self, app: &App, filepaths: &[PathBuf]) -> Result {
+    #[instrument("helm_upgrade", skip(self, app, filepaths), fields(app.chart = %app.spec.chart, app.name = name, app.namespace = app.spec.namespace))]
+    async fn upgrade(&self, name: &str, app: &App, filepaths: &[PathBuf]) -> Result {
         let chart = match &app.spec.chart {
             Chart::BuiltIn {} => self.0.chart_path.to_str().ok_or(Error::InvalidUnicode)?,
         };
@@ -114,7 +114,7 @@ impl HelmClient for CliHelmClient {
             cmd.arg("--values").arg(path);
         }
         debug!("running helm upgrade");
-        let output = cmd.arg(&app.spec.release).arg(chart).output().await?;
+        let output = cmd.arg(name).arg(chart).output().await?;
         Self::handle_output(output)
     }
 }
