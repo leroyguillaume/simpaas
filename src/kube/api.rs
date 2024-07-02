@@ -1,15 +1,32 @@
 use k8s_openapi::api::{core::v1::Namespace, networking::v1::Ingress};
 use kube::{
     api::{DeleteParams, ListParams, Patch, PatchParams},
-    Api, Client, Error,
+    Api, Client,
 };
 use tracing::{debug, instrument, warn};
 
-use crate::CARGO_PKG_NAME;
-
-use crate::domain::{App, Invitation, Permission, Role, Service, User};
+use crate::{
+    domain::{Action, App, Invitation, PermissionError, Role, Service, User},
+    CARGO_PKG_NAME,
+};
 
 use super::{DomainUsage, KubeClient, Result};
+
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+    #[error("{0}")]
+    Permission(
+        #[from]
+        #[source]
+        PermissionError,
+    ),
+    #[error("{0}")]
+    Kube(
+        #[from]
+        #[source]
+        ::kube::Error,
+    ),
+}
 
 pub struct ApiKubeClient(Client);
 
@@ -90,6 +107,13 @@ impl KubeClient for ApiKubeClient {
         Ok(usages)
     }
 
+    #[instrument(skip(self, name), fields(app.name = name))]
+    async fn get_app(&self, name: &str) -> Result<Option<App>> {
+        let api: Api<App> = Api::default_namespaced(self.0.clone());
+        debug!("getting app");
+        api.get_opt(name).await.map_err(super::Error::from)
+    }
+
     #[instrument(skip(self, token), fields(invit.token = token))]
     async fn get_invitation(&self, token: &str) -> Result<Option<Invitation>> {
         let api: Api<Invitation> = Api::default_namespaced(self.0.clone());
@@ -138,13 +162,13 @@ impl KubeClient for ApiKubeClient {
         Ok(())
     }
 
-    #[instrument(skip(self, user, perm), fields(%perm))]
-    async fn user_has_permission(&self, user: &User, perm: &Permission) -> Result<bool> {
+    #[instrument(skip(self, user, action), fields(%action))]
+    async fn user_has_permission(&self, user: &User, action: Action<'_>) -> Result<bool> {
         for role in &user.spec.roles {
             let role = self.get_role(role).await?;
             if let Some(role) = role {
                 for role_perm in role.spec.permissions {
-                    if role_perm.allows(perm) {
+                    if role_perm.allows(action)? {
                         return Ok(true);
                     }
                 }
@@ -157,5 +181,17 @@ impl KubeClient for ApiKubeClient {
 impl From<Error> for super::Error {
     fn from(err: Error) -> Self {
         Self(Box::new(err))
+    }
+}
+
+impl From<::kube::Error> for super::Error {
+    fn from(err: ::kube::Error) -> Self {
+        Error::Kube(err).into()
+    }
+}
+
+impl From<PermissionError> for super::Error {
+    fn from(err: PermissionError) -> Self {
+        Error::Permission(err).into()
     }
 }

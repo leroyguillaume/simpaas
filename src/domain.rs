@@ -4,11 +4,37 @@ use std::{
 };
 
 use kube::CustomResource;
+use regex::Regex;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use serde_trim::string_trim;
 use validator::Validate;
+
+#[derive(Debug, thiserror::Error)]
+#[error("regex error: {0}")]
+pub struct PermissionError(
+    #[from]
+    #[source]
+    pub regex::Error,
+);
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Action<'a> {
+    CreateApp,
+    InviteUsers,
+    UpdateApp(&'a str),
+}
+
+impl Display for Action<'_> {
+    fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
+        match self {
+            Self::CreateApp => write!(f, "create_app"),
+            Self::InviteUsers => write!(f, "invite_users"),
+            Self::UpdateApp(_) => write!(f, "update_app"),
+        }
+    }
+}
 
 #[derive(Clone, CustomResource, Debug, Deserialize, Eq, PartialEq, JsonSchema, Serialize)]
 #[kube(
@@ -25,6 +51,8 @@ pub struct AppSpec {
     pub chart: Chart,
     /// Namespace.
     pub namespace: String,
+    /// Owner of the app.
+    pub owner: String,
     /// List of app services.
     pub services: Vec<Service>,
     /// Helm chart values.
@@ -86,13 +114,26 @@ pub enum Permission {
     CreateApp {},
     /// Allow role to invite users.
     InviteUsers {},
+    UpdateApp {
+        /// Pattern that matches app name.
+        #[serde(default = "default_perm_pattern")]
+        name: String,
+    },
 }
 
 impl Permission {
-    pub fn allows(&self, perm: &Self) -> bool {
+    pub fn allows(&self, action: Action) -> Result<bool, PermissionError> {
         match self {
-            Self::CreateApp {} => matches!(perm, Self::CreateApp {}),
-            Self::InviteUsers {} => matches!(perm, Self::InviteUsers {}),
+            Self::CreateApp {} => Ok(matches!(action, Action::CreateApp)),
+            Self::InviteUsers {} => Ok(matches!(action, Action::InviteUsers)),
+            Self::UpdateApp { name } => {
+                if let Action::UpdateApp(app) = action {
+                    let regex = Regex::new(name)?;
+                    Ok(regex.is_match(app))
+                } else {
+                    Ok(false)
+                }
+            }
         }
     }
 }
@@ -102,6 +143,7 @@ impl Display for Permission {
         match self {
             Self::CreateApp {} => write!(f, "create_app"),
             Self::InviteUsers {} => write!(f, "invite_users"),
+            Self::UpdateApp { .. } => write!(f, "update_app"),
         }
     }
 }
@@ -186,6 +228,10 @@ pub struct UserSpec {
     /// User roles.
     #[serde(default)]
     pub roles: BTreeSet<String>,
+}
+
+fn default_perm_pattern() -> String {
+    r".*".into()
 }
 
 fn default_protocol() -> String {

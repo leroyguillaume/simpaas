@@ -29,12 +29,21 @@ spec:
                     - createApp
                   - required:
                     - inviteUsers
+                  - required:
+                    - updateApp
                   properties:
                     createApp:
                       description: Allow role to create app.
                       type: object
                     inviteUsers:
                       description: Allow role to invite users.
+                      type: object
+                    updateApp:
+                      properties:
+                        name:
+                          default: .*
+                          description: Pattern that matches app name.
+                          type: string
                       type: object
                   type: object
                 type: array

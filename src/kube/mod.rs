@@ -1,6 +1,6 @@
 use futures::Future;
 
-use crate::domain::{App, Invitation, Permission, Role, Service, User};
+use crate::domain::{Action, App, Invitation, Role, Service, User};
 
 pub mod api;
 
@@ -30,6 +30,8 @@ pub trait KubeClient: Send + Sync {
         svcs: &[Service],
     ) -> impl Future<Output = Result<Vec<DomainUsage>>> + Send;
 
+    fn get_app(&self, name: &str) -> impl Future<Output = Result<Option<App>>> + Send;
+
     fn get_invitation(
         &self,
         token: &str,
@@ -52,6 +54,6 @@ pub trait KubeClient: Send + Sync {
     fn user_has_permission(
         &self,
         user: &User,
-        perm: &Permission,
+        action: Action,
     ) -> impl Future<Output = Result<bool>> + Send;
 }
