@@ -5,6 +5,7 @@
 {{- define "simpaas-app.labels" -}}
 helm.sh/chart: {{ include "simpaas-app.chart" . }}
 app.kubernetes.io/managed-by: simpaas
+simpaas.gleroy.dev/app: {{ .Release.Name }}
 {{- end }}
 
 {{- define "simpaas-app.service.labels" -}}

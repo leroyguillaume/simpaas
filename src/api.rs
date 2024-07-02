@@ -94,7 +94,7 @@ enum Error {
         crate::pwd::Error,
     ),
     #[error("resource already exists")]
-    ResourceAlreadyExists,
+    ResourceAlreadyExists(Vec<ResourceAlreadyExistsItem>),
     #[error("resource not found")]
     ResourceNotFound,
     #[error("unauthroized")]
@@ -116,7 +116,7 @@ impl IntoResponse for Error {
             Self::JwtDecoding(_) | Self::Unauthorized | Self::WrongCredentials => {
                 StatusCode::UNAUTHORIZED.into_response()
             }
-            Self::ResourceAlreadyExists => StatusCode::CONFLICT.into_response(),
+            Self::ResourceAlreadyExists(resp) => (StatusCode::CONFLICT, Json(resp)).into_response(),
             Self::ResourceNotFound => StatusCode::NOT_FOUND.into_response(),
             Self::Validation(err) => (StatusCode::BAD_REQUEST, Json(err)).into_response(),
             err => {
@@ -165,10 +165,6 @@ struct CreateAppRequest {
     #[serde(default, deserialize_with = "option_string_trim")]
     #[validate(length(min = 1))]
     namespace: Option<String>,
-    /// Release name. If not specified, name is used.
-    #[serde(default, deserialize_with = "option_string_trim")]
-    #[validate(length(min = 1))]
-    release: Option<String>,
     /// List of app services.
     #[validate(nested)]
     services: Vec<Service>,
@@ -205,6 +201,17 @@ struct UserPasswordCredentialsRequest {
 struct JwtResponse {
     /// JWT.
     jwt: String,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, JsonSchema, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ResourceAlreadyExistsItem {
+    /// Field in conflict.
+    field: String,
+    /// Source of conflict.
+    source: Option<String>,
+    /// Value in conflict.
+    value: String,
 }
 
 fn create_router<
@@ -294,12 +301,11 @@ async fn create_app<J: JwtEncoder, K: KubeClient, M: MailSender, P: PasswordEnco
     let user = authenticated_user(&headers, &ctx.jwt_encoder, &ctx.kube).await?;
     check_permission(&user, &Permission::CreateApp {}, &ctx.kube).await?;
     req.validate()?;
+    ensure_domains_are_free(&req.name, &req.services, &ctx.kube).await?;
     let namespace = req.namespace.unwrap_or_else(|| req.name.clone());
-    let release = req.release.unwrap_or_else(|| req.name.clone());
     let spec = AppSpec {
         chart: req.chart,
         namespace,
-        release,
         services: req.services,
         values: req.values,
     };
@@ -344,7 +350,12 @@ async fn join<J: JwtEncoder, K: KubeClient, M: MailSender, P: PasswordEncoder>(
     async {
         debug!("creating user from invitation");
         if ctx.kube.get_user(&req.user).await?.is_some() {
-            return Err(Error::ResourceAlreadyExists);
+            let resp = ResourceAlreadyExistsItem {
+                field: "name".into(),
+                source: Some(req.user.clone()),
+                value: req.user,
+            };
+            return Err(Error::ResourceAlreadyExists(vec![resp]));
         }
         let invit = ctx
             .kube
@@ -451,5 +462,22 @@ async fn check_permission<K: KubeClient>(user: &User, perm: &Permission, kube: &
     } else {
         debug!("user doesn't have required permission");
         Err(Error::Forbidden)
+    }
+}
+
+async fn ensure_domains_are_free<K: KubeClient>(name: &str, svcs: &[Service], kube: &K) -> Result {
+    let usages = kube.domain_usages(name, svcs).await?;
+    if usages.is_empty() {
+        Ok(())
+    } else {
+        let items = usages
+            .into_iter()
+            .map(|usage| ResourceAlreadyExistsItem {
+                field: "domain".into(),
+                source: usage.app,
+                value: usage.domain,
+            })
+            .collect();
+        Err(Error::ResourceAlreadyExists(items))
     }
 }

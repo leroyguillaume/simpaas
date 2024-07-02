@@ -1,13 +1,13 @@
-use k8s_openapi::api::core::v1::Namespace;
+use k8s_openapi::api::{core::v1::Namespace, networking::v1::Ingress};
 use kube::{
-    api::{DeleteParams, Patch, PatchParams},
+    api::{DeleteParams, ListParams, Patch, PatchParams},
     Api, Client, Error,
 };
 use tracing::{debug, instrument, warn};
 
 use crate::CARGO_PKG_NAME;
 
-use super::{App, Invitation, KubeClient, Permission, Result, Role, User};
+use super::{App, DomainUsage, Invitation, KubeClient, Permission, Result, Role, Service, User};
 
 pub struct ApiKubeClient(Client);
 
@@ -38,6 +38,54 @@ impl KubeClient for ApiKubeClient {
             warn!("namespace can't be deleted because it doesn't exist");
         }
         Ok(())
+    }
+
+    #[instrument(skip(self, name, svcs), fields(app.name = name))]
+    async fn domain_usages(&self, name: &str, svcs: &[Service]) -> Result<Vec<DomainUsage>> {
+        let domains: Vec<&String> = svcs
+            .iter()
+            .flat_map(|svc| {
+                svc.expose
+                    .iter()
+                    .filter_map(|exp| exp.ingress.as_ref().map(|ing| &ing.domain))
+            })
+            .collect();
+        let api: Api<Ingress> = Api::all(self.0.clone());
+        let params = ListParams::default();
+        let mut usages = vec![];
+        debug!("listing all ingresses");
+        for ing in api.list(&params).await? {
+            if let Some(spec) = ing.spec {
+                if let Some(rules) = spec.rules {
+                    for rule in rules {
+                        if let Some(host) = rule.host {
+                            if domains.iter().any(|domain| *domain == &host) {
+                                let app = ing
+                                    .metadata
+                                    .labels
+                                    .as_ref()
+                                    .and_then(|annot| annot.get("simpaas.gleroy.dev/app"))
+                                    .cloned();
+                                if let Some(app) = app {
+                                    if app != name {
+                                        usages.push(DomainUsage {
+                                            app: Some(app),
+                                            domain: host,
+                                        });
+                                    }
+                                } else {
+                                    usages.push(DomainUsage {
+                                        app: None,
+                                        domain: host,
+                                    });
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Ok(usages)
     }
 
     #[instrument(skip(self, token), fields(invit.token = token))]
