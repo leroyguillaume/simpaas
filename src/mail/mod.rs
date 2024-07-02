@@ -1,6 +1,6 @@
 use futures::Future;
 
-use crate::kube::Invitation;
+use crate::domain::Invitation;
 
 pub mod default;
 

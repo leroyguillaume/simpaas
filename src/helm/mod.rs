@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use futures::Future;
 
-use crate::kube::App;
+use crate::domain::App;
 
 pub mod cli;
 

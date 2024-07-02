@@ -1,6 +1,6 @@
 use futures::Future;
 
-use crate::kube::{App, KubeClient};
+use crate::{domain::App, kube::KubeClient};
 
 pub mod helm;
 

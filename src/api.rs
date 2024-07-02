@@ -24,11 +24,11 @@ use uuid::Uuid;
 use validator::Validate;
 
 use crate::{
-    jwt::JwtEncoder,
-    kube::{
-        App, AppSpec, Chart, Invitation, InvitationSpec, KubeClient, Permission, Service, User,
-        UserSpec, FINALIZER,
+    domain::{
+        App, AppSpec, Chart, Invitation, InvitationSpec, Permission, Service, User, UserSpec,
     },
+    jwt::JwtEncoder,
+    kube::{KubeClient, FINALIZER},
     mail::MailSender,
     pwd::PasswordEncoder,
     SignalListener, CARGO_PKG_NAME,

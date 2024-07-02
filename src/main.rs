@@ -8,9 +8,10 @@ use ::kube::CustomResourceExt;
 use api::{start_api, ApiContext};
 use clap::{Parser, Subcommand};
 use deploy::helm::{HelmDeployer, HelmDeployerArgs};
+use domain::{App, Invitation, Role, User};
 use helm::cli::{CliHelmClient, CliHelmClientArgs};
 use jwt::default::{DefaultJwtEncoder, DefaultJwtEncoderArgs};
-use kube::{api::ApiKubeClient, App, Invitation, Role, User};
+use kube::api::ApiKubeClient;
 use mail::default::{DefaultMailSender, DefaultMailSenderArgs};
 use op::{start_op, OpContext};
 use opentelemetry::KeyValue;
@@ -37,6 +38,7 @@ use tracing_subscriber::{
 
 mod api;
 mod deploy;
+mod domain;
 mod helm;
 mod jwt;
 mod kube;
