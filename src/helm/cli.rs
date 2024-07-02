@@ -6,7 +6,7 @@ use std::{
 use tokio::process::Command;
 use tracing::{debug, error, instrument, Level};
 
-use crate::kube::{App, Chart};
+use crate::domain::{App, Chart};
 
 use super::{HelmClient, Result};
 

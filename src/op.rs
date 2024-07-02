@@ -10,7 +10,8 @@ use tracing::{debug, error, info, info_span, Instrument};
 
 use crate::{
     deploy::Deployer,
-    kube::{App, KubeClient, FINALIZER},
+    domain::App,
+    kube::{KubeClient, FINALIZER},
     SignalListener,
 };
 

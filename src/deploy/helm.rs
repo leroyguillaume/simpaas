@@ -5,10 +5,7 @@ use tempdir::TempDir;
 use tracing::{debug, info, instrument};
 use uuid::Uuid;
 
-use crate::{
-    helm::HelmClient,
-    kube::{App, KubeClient},
-};
+use crate::{domain::App, helm::HelmClient, kube::KubeClient};
 
 use super::{Deployer, Result};
 

@@ -7,7 +7,9 @@ use tracing::{debug, instrument, warn};
 
 use crate::CARGO_PKG_NAME;
 
-use super::{App, DomainUsage, Invitation, KubeClient, Permission, Result, Role, Service, User};
+use crate::domain::{App, Invitation, Permission, Role, Service, User};
+
+use super::{DomainUsage, KubeClient, Result};
 
 pub struct ApiKubeClient(Client);
 

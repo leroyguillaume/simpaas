@@ -2,7 +2,7 @@ use liquid::{object, Parser, Template};
 use mail_send::{mail_builder::MessageBuilder, SmtpClientBuilder};
 use tracing::{debug, instrument};
 
-use crate::{api::PATH_JOIN, kube::Invitation};
+use crate::{api::PATH_JOIN, domain::Invitation};
 
 use super::{MailSender, Result};
 
