@@ -33,6 +33,9 @@ spec:
               namespace:
                 description: Namespace.
                 type: string
+              owner:
+                description: Owner of the app.
+                type: string
               services:
                 description: List of app services.
                 items:
@@ -108,6 +111,7 @@ spec:
             required:
             - chart
             - namespace
+            - owner
             - services
             type: object
         required:

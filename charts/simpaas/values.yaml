@@ -117,6 +117,8 @@ api:
     permissions:
     - createApp: {}
     - inviteUsers: {}
+    - updateApp:
+        name: .*
 
   admin:
     create: true

@@ -24,9 +24,7 @@ use uuid::Uuid;
 use validator::Validate;
 
 use crate::{
-    domain::{
-        App, AppSpec, Chart, Invitation, InvitationSpec, Permission, Service, User, UserSpec,
-    },
+    domain::{Action, App, AppSpec, Chart, Invitation, InvitationSpec, Service, User, UserSpec},
     jwt::JwtEncoder,
     kube::{KubeClient, FINALIZER},
     mail::MailSender,
@@ -93,6 +91,8 @@ enum Error {
         #[source]
         crate::pwd::Error,
     ),
+    #[error("precondition failed")]
+    PreconditionFailed(PreconditionFailedResponse),
     #[error("resource already exists")]
     ResourceAlreadyExists(Vec<ResourceAlreadyExistsItem>),
     #[error("resource not found")]
@@ -115,6 +115,9 @@ impl IntoResponse for Error {
             Self::Forbidden => StatusCode::FORBIDDEN.into_response(),
             Self::JwtDecoding(_) | Self::Unauthorized | Self::WrongCredentials => {
                 StatusCode::UNAUTHORIZED.into_response()
+            }
+            Self::PreconditionFailed(resp) => {
+                (StatusCode::PRECONDITION_FAILED, Json(resp)).into_response()
             }
             Self::ResourceAlreadyExists(resp) => (StatusCode::CONFLICT, Json(resp)).into_response(),
             Self::ResourceNotFound => StatusCode::NOT_FOUND.into_response(),
@@ -187,6 +190,19 @@ struct SendInvitationRequest {
 
 #[derive(Clone, Debug, Deserialize, PartialEq, JsonSchema, Serialize, Validate)]
 #[serde(rename_all = "camelCase")]
+struct UpdateAppRequest {
+    /// Owner of the app.
+    owner: String,
+    /// List of app services.
+    #[validate(nested)]
+    services: Vec<Service>,
+    /// Helm chart values.
+    #[serde(default)]
+    values: Map<String, Value>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, JsonSchema, Serialize, Validate)]
+#[serde(rename_all = "camelCase")]
 struct UserPasswordCredentialsRequest {
     /// Password.
     password: String,
@@ -201,6 +217,21 @@ struct UserPasswordCredentialsRequest {
 struct JwtResponse {
     /// JWT.
     jwt: String,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, JsonSchema, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PreconditionFailedResponse {
+    /// Field that causes the failure.
+    field: String,
+    /// The reason of the failure.
+    reason: PreconditionFailedReason,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, JsonSchema, Serialize)]
+#[serde(rename_all = "camelCase")]
+enum PreconditionFailedReason {
+    NotFound,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, JsonSchema, Serialize)]
@@ -247,6 +278,7 @@ fn create_router<
     ApiRouter::new()
         .api_route("/_health", aide::axum::routing::get(health))
         .api_route("/app", aide::axum::routing::post(create_app))
+        .api_route("/app/:name", aide::axum::routing::put(update_app))
         .api_route(
             "/auth",
             aide::axum::routing::post(authenticate_with_password),
@@ -298,14 +330,24 @@ async fn create_app<J: JwtEncoder, K: KubeClient, M: MailSender, P: PasswordEnco
     State(ctx): State<Arc<ApiContext<J, K, M, P>>>,
     Json(req): Json<CreateAppRequest>,
 ) -> Result<(StatusCode, Json<AppSpec>)> {
-    let user = authenticated_user(&headers, &ctx.jwt_encoder, &ctx.kube).await?;
-    check_permission(&user, &Permission::CreateApp {}, &ctx.kube).await?;
     req.validate()?;
+    let (username, user) = authenticated_user(&headers, &ctx.jwt_encoder, &ctx.kube).await?;
+    check_permission(&user, Action::CreateApp, &ctx.kube).await?;
     ensure_domains_are_free(&req.name, &req.services, &ctx.kube).await?;
+    if ctx.kube.get_app(&req.name).await?.is_some() {
+        return Err(Error::ResourceAlreadyExists(vec![
+            ResourceAlreadyExistsItem {
+                field: "name".into(),
+                source: Some(req.name.clone()),
+                value: req.name,
+            },
+        ]));
+    }
     let namespace = req.namespace.unwrap_or_else(|| req.name.clone());
     let spec = AppSpec {
         chart: req.chart,
         namespace,
+        owner: username,
         services: req.services,
         values: req.values,
     };
@@ -393,12 +435,12 @@ async fn send_invitation<J: JwtEncoder, K: KubeClient, M: MailSender, P: Passwor
     Json(req): Json<SendInvitationRequest>,
 ) -> Result<(StatusCode, Json<InvitationSpec>)> {
     req.validate()?;
-    let user = authenticated_user(&headers, &ctx.jwt_encoder, &ctx.kube).await?;
+    let (_, user) = authenticated_user(&headers, &ctx.jwt_encoder, &ctx.kube).await?;
     let from = user.metadata.name.as_ref().ok_or_else(|| {
         debug!("user doesn't have name");
         Error::MalformedResource
     })?;
-    check_permission(&user, &Permission::InviteUsers {}, &ctx.kube).await?;
+    check_permission(&user, Action::InviteUsers, &ctx.kube).await?;
     let token = Uuid::new_v4().to_string();
     let spec = InvitationSpec {
         from: from.clone(),
@@ -429,12 +471,58 @@ async fn send_invitation<J: JwtEncoder, K: KubeClient, M: MailSender, P: Passwor
     .await
 }
 
+async fn update_app<J: JwtEncoder, K: KubeClient, M: MailSender, P: PasswordEncoder>(
+    headers: HeaderMap,
+    Path(name): Path<String>,
+    State(ctx): State<Arc<ApiContext<J, K, M, P>>>,
+    Json(req): Json<UpdateAppRequest>,
+) -> Result<(StatusCode, Json<AppSpec>)> {
+    req.validate()?;
+    let (username, user) = authenticated_user(&headers, &ctx.jwt_encoder, &ctx.kube).await?;
+    let app = ctx
+        .kube
+        .get_app(&name)
+        .await?
+        .ok_or(Error::ResourceNotFound)?;
+    if app.spec.owner != username {
+        check_permission(&user, Action::UpdateApp(&name), &ctx.kube).await?;
+    }
+    ensure_domains_are_free(&name, &req.services, &ctx.kube).await?;
+    if ctx.kube.get_user(&req.owner).await?.is_none() {
+        return Err(Error::PreconditionFailed(PreconditionFailedResponse {
+            field: "owner".into(),
+            reason: PreconditionFailedReason::NotFound,
+        }));
+    }
+    let span = info_span!("update_app", app.name = name,);
+    async {
+        debug!("updating app");
+        let app = App {
+            metadata: ObjectMeta {
+                managed_fields: None,
+                ..app.metadata
+            },
+            spec: AppSpec {
+                owner: req.owner,
+                services: req.services,
+                values: req.values,
+                ..app.spec
+            },
+        };
+        ctx.kube.patch_app(&name, &app).await?;
+        info!("app updated");
+        Ok((StatusCode::OK, Json(app.spec)))
+    }
+    .instrument(span)
+    .await
+}
+
 #[instrument(skip(headers, encoder, kube))]
 async fn authenticated_user<J: JwtEncoder, K: KubeClient>(
     headers: &HeaderMap,
     encoder: &J,
     kube: &K,
-) -> Result<User> {
+) -> Result<(String, User)> {
     let authz = headers.get(header::AUTHORIZATION).ok_or_else(|| {
         debug!("request doesn't contain header `{}`", header::AUTHORIZATION);
         Error::Unauthorized
@@ -450,14 +538,15 @@ async fn authenticated_user<J: JwtEncoder, K: KubeClient>(
     })?;
     let jwt = caps.get(1).unwrap().as_str();
     let name = encoder.decode(jwt).map_err(Error::JwtDecoding)?;
-    kube.get_user(&name).await?.ok_or_else(|| {
+    let user = kube.get_user(&name).await?.ok_or_else(|| {
         debug!("user doesn't exist");
         Error::Unauthorized
-    })
+    })?;
+    Ok((name, user))
 }
 
-async fn check_permission<K: KubeClient>(user: &User, perm: &Permission, kube: &K) -> Result {
-    if kube.user_has_permission(user, perm).await? {
+async fn check_permission<K: KubeClient>(user: &User, action: Action<'_>, kube: &K) -> Result {
+    if kube.user_has_permission(user, action).await? {
         Ok(())
     } else {
         debug!("user doesn't have required permission");
