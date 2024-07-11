@@ -28,6 +28,8 @@ spec:
                   - required:
                     - createApp
                   - required:
+                    - deleteApp
+                  - required:
                     - inviteUsers
                   - required:
                     - updateApp
@@ -35,10 +37,19 @@ spec:
                     createApp:
                       description: Allow role to create app.
                       type: object
+                    deleteApp:
+                      description: Allow role to delete app.
+                      properties:
+                        name:
+                          default: .*
+                          description: Pattern that matches app name.
+                          type: string
+                      type: object
                     inviteUsers:
                       description: Allow role to invite users.
                       type: object
                     updateApp:
+                      description: Allow roel to update app.
                       properties:
                         name:
                           default: .*

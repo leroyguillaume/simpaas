@@ -37,6 +37,15 @@ impl ApiKubeClient {
 }
 
 impl KubeClient for ApiKubeClient {
+    #[instrument(skip(self, name), fields(app.name = name))]
+    async fn delete_app(&self, name: &str) -> Result {
+        let api: Api<App> = Api::default_namespaced(self.0.clone());
+        let params = DeleteParams::background();
+        debug!("deleting app");
+        api.delete(name, &params).await?;
+        Ok(())
+    }
+
     #[instrument(skip(self, token), fields(invit.token = token))]
     async fn delete_invitation(&self, token: &str) -> Result {
         let api: Api<Invitation> = Api::default_namespaced(self.0.clone());

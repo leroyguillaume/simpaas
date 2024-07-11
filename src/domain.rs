@@ -22,6 +22,7 @@ pub struct PermissionError(
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Action<'a> {
     CreateApp,
+    DeleteApp(&'a str),
     InviteUsers,
     UpdateApp(&'a str),
 }
@@ -30,6 +31,7 @@ impl Display for Action<'_> {
     fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
         match self {
             Self::CreateApp => write!(f, "create_app"),
+            Self::DeleteApp(_) => write!(f, "delete_app"),
             Self::InviteUsers => write!(f, "invite_users"),
             Self::UpdateApp(_) => write!(f, "update_app"),
         }
@@ -112,8 +114,15 @@ pub struct Ingress {
 pub enum Permission {
     /// Allow role to create app.
     CreateApp {},
+    /// Allow role to delete app.
+    DeleteApp {
+        /// Pattern that matches app name.
+        #[serde(default = "default_perm_pattern")]
+        name: String,
+    },
     /// Allow role to invite users.
     InviteUsers {},
+    /// Allow roel to update app.
     UpdateApp {
         /// Pattern that matches app name.
         #[serde(default = "default_perm_pattern")]
@@ -125,16 +134,27 @@ impl Permission {
     pub fn allows(&self, action: Action) -> Result<bool, PermissionError> {
         match self {
             Self::CreateApp {} => Ok(matches!(action, Action::CreateApp)),
+            Self::DeleteApp { name: pattern } => {
+                if let Action::DeleteApp(name) = action {
+                    Self::name_matches(name, pattern)
+                } else {
+                    Ok(false)
+                }
+            }
             Self::InviteUsers {} => Ok(matches!(action, Action::InviteUsers)),
-            Self::UpdateApp { name } => {
-                if let Action::UpdateApp(app) = action {
-                    let regex = Regex::new(name)?;
-                    Ok(regex.is_match(app))
+            Self::UpdateApp { name: pattern } => {
+                if let Action::UpdateApp(name) = action {
+                    Self::name_matches(name, pattern)
                 } else {
                     Ok(false)
                 }
             }
         }
+    }
+
+    fn name_matches(name: &str, pattern: &str) -> Result<bool, PermissionError> {
+        let regex = Regex::new(pattern)?;
+        Ok(regex.is_match(name))
     }
 }
 
@@ -142,6 +162,7 @@ impl Display for Permission {
     fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
         match self {
             Self::CreateApp {} => write!(f, "create_app"),
+            Self::DeleteApp { .. } => write!(f, "delete_app"),
             Self::InviteUsers {} => write!(f, "invite_users"),
             Self::UpdateApp { .. } => write!(f, "update_app"),
         }
