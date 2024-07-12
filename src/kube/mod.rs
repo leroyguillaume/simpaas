@@ -20,6 +20,8 @@ pub struct DomainUsage {
 }
 
 pub trait KubeClient: Send + Sync {
+    fn delete_app(&self, name: &str) -> impl Future<Output = Result> + Send;
+
     fn delete_invitation(&self, token: &str) -> impl Future<Output = Result> + Send;
 
     fn delete_namespace(&self, namespace: &str) -> impl Future<Output = Result> + Send;

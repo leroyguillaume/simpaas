@@ -279,6 +279,7 @@ fn create_router<
         .api_route("/_health", aide::axum::routing::get(health))
         .api_route("/app", aide::axum::routing::post(create_app))
         .api_route("/app/:name", aide::axum::routing::put(update_app))
+        .api_route("/app/:name", aide::axum::routing::delete(delete_app))
         .api_route(
             "/auth",
             aide::axum::routing::post(authenticate_with_password),
@@ -365,6 +366,31 @@ async fn create_app<J: JwtEncoder, K: KubeClient, M: MailSender, P: PasswordEnco
         ctx.kube.patch_app(&req.name, &app).await?;
         info!("app created");
         Ok((StatusCode::CREATED, Json(app.spec)))
+    }
+    .instrument(span)
+    .await
+}
+
+async fn delete_app<J: JwtEncoder, K: KubeClient, M: MailSender, P: PasswordEncoder>(
+    headers: HeaderMap,
+    State(ctx): State<Arc<ApiContext<J, K, M, P>>>,
+    Path(name): Path<String>,
+) -> Result<StatusCode> {
+    let (username, user) = authenticated_user(&headers, &ctx.jwt_encoder, &ctx.kube).await?;
+    let app = ctx
+        .kube
+        .get_app(&name)
+        .await?
+        .ok_or(Error::ResourceNotFound)?;
+    if app.spec.owner != username {
+        check_permission(&user, Action::DeleteApp(&name), &ctx.kube).await?;
+    }
+    let span = info_span!("delete_app", app.name = name,);
+    async {
+        debug!("deleting app");
+        ctx.kube.delete_app(&name).await?;
+        info!("app deleted");
+        Ok(StatusCode::NO_CONTENT)
     }
     .instrument(span)
     .await
