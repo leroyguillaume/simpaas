@@ -24,6 +24,7 @@ pub enum Action<'a> {
     CreateApp,
     DeleteApp(&'a str),
     InviteUsers,
+    ReadApp(&'a str),
     UpdateApp(&'a str),
 }
 
@@ -31,9 +32,10 @@ impl Display for Action<'_> {
     fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
         match self {
             Self::CreateApp => write!(f, "create_app"),
-            Self::DeleteApp(_) => write!(f, "delete_app"),
+            Self::DeleteApp(pattern) => write!(f, "delete_app(`{pattern}`)"),
             Self::InviteUsers => write!(f, "invite_users"),
-            Self::UpdateApp(_) => write!(f, "update_app"),
+            Self::ReadApp(pattern) => write!(f, "read_app(`{pattern}`)"),
+            Self::UpdateApp(pattern) => write!(f, "update_app(`{pattern}`)"),
         }
     }
 }
@@ -122,6 +124,12 @@ pub enum Permission {
     },
     /// Allow role to invite users.
     InviteUsers {},
+    /// Allow role to read app.
+    ReadApp {
+        /// Pattern that matches app name.
+        #[serde(default = "default_perm_pattern")]
+        name: String,
+    },
     /// Allow roel to update app.
     UpdateApp {
         /// Pattern that matches app name.
@@ -142,6 +150,13 @@ impl Permission {
                 }
             }
             Self::InviteUsers {} => Ok(matches!(action, Action::InviteUsers)),
+            Self::ReadApp { name: pattern } => {
+                if let Action::ReadApp(name) = action {
+                    Self::name_matches(name, pattern)
+                } else {
+                    Ok(false)
+                }
+            }
             Self::UpdateApp { name: pattern } => {
                 if let Action::UpdateApp(name) = action {
                     Self::name_matches(name, pattern)
@@ -162,9 +177,10 @@ impl Display for Permission {
     fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
         match self {
             Self::CreateApp {} => write!(f, "create_app"),
-            Self::DeleteApp { .. } => write!(f, "delete_app"),
+            Self::DeleteApp { name } => write!(f, "delete_app(`{name}`)"),
             Self::InviteUsers {} => write!(f, "invite_users"),
-            Self::UpdateApp { .. } => write!(f, "update_app"),
+            Self::ReadApp { name } => write!(f, "read_app(`{name}`)"),
+            Self::UpdateApp { name } => write!(f, "update_app(`{name}`)"),
         }
     }
 }

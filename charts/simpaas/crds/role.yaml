@@ -32,6 +32,8 @@ spec:
                   - required:
                     - inviteUsers
                   - required:
+                    - readApp
+                  - required:
                     - updateApp
                   properties:
                     createApp:
@@ -47,6 +49,14 @@ spec:
                       type: object
                     inviteUsers:
                       description: Allow role to invite users.
+                      type: object
+                    readApp:
+                      description: Allow role to read app.
+                      properties:
+                        name:
+                          default: .*
+                          description: Pattern that matches app name.
+                          type: string
                       type: object
                     updateApp:
                       description: Allow roel to update app.

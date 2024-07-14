@@ -1,4 +1,4 @@
-use std::{collections::BTreeSet, net::SocketAddr, sync::Arc};
+use std::{borrow::Cow, collections::BTreeSet, net::SocketAddr, sync::Arc};
 
 use aide::{
     axum::ApiRouter,
@@ -6,7 +6,7 @@ use aide::{
     OperationOutput,
 };
 use axum::{
-    extract::{MatchedPath, Path, State},
+    extract::{MatchedPath, Path, Query, State},
     http::{header, HeaderMap, Request, StatusCode},
     response::{IntoResponse, Response},
     Extension, Json, Router,
@@ -21,12 +21,12 @@ use tokio::net::TcpListener;
 use tower_http::trace::TraceLayer;
 use tracing::{debug, error, info, info_span, instrument, Instrument};
 use uuid::Uuid;
-use validator::Validate;
+use validator::{Validate, ValidationError, ValidationErrors};
 
 use crate::{
     domain::{Action, App, AppSpec, Chart, Invitation, InvitationSpec, Service, User, UserSpec},
     jwt::JwtEncoder,
-    kube::{KubeClient, FINALIZER},
+    kube::{AppFilter, KubeClient, FINALIZER},
     mail::MailSender,
     pwd::PasswordEncoder,
     SignalListener, CARGO_PKG_NAME,
@@ -103,7 +103,7 @@ enum Error {
     Validation(
         #[from]
         #[source]
-        validator::ValidationErrors,
+        ValidationErrors,
     ),
     #[error("wrong credentials")]
     WrongCredentials,
@@ -154,7 +154,15 @@ impl OperationOutput for Error {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, JsonSchema, Serialize, Validate)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, JsonSchema, Serialize, Validate)]
+#[serde(rename_all = "camelCase")]
+struct AppFilterQuery {
+    /// Regex to match app name.
+    #[serde(default = "default_filter")]
+    name: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, JsonSchema, Serialize, Validate)]
 #[serde(rename_all = "camelCase")]
 struct CreateAppRequest {
     /// Chart to use to install app.
@@ -176,7 +184,7 @@ struct CreateAppRequest {
     values: Map<String, Value>,
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, JsonSchema, Serialize, Validate)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, JsonSchema, Serialize, Validate)]
 #[serde(rename_all = "camelCase")]
 struct SendInvitationRequest {
     /// User roles.
@@ -201,7 +209,7 @@ struct UpdateAppRequest {
     values: Map<String, Value>,
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, JsonSchema, Serialize, Validate)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, JsonSchema, Serialize, Validate)]
 #[serde(rename_all = "camelCase")]
 struct UserPasswordCredentialsRequest {
     /// Password.
@@ -212,14 +220,14 @@ struct UserPasswordCredentialsRequest {
     user: String,
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, JsonSchema, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, JsonSchema, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct JwtResponse {
     /// JWT.
     jwt: String,
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, JsonSchema, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, JsonSchema, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct PreconditionFailedResponse {
     /// Field that causes the failure.
@@ -228,13 +236,13 @@ struct PreconditionFailedResponse {
     reason: PreconditionFailedReason,
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, JsonSchema, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, JsonSchema, Serialize)]
 #[serde(rename_all = "camelCase")]
 enum PreconditionFailedReason {
     NotFound,
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, JsonSchema, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, JsonSchema, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct ResourceAlreadyExistsItem {
     /// Field in conflict.
@@ -277,7 +285,9 @@ fn create_router<
     };
     ApiRouter::new()
         .api_route("/_health", aide::axum::routing::get(health))
+        .api_route("/app", aide::axum::routing::get(list_apps))
         .api_route("/app", aide::axum::routing::post(create_app))
+        .api_route("/app/:name", aide::axum::routing::get(get_app))
         .api_route("/app/:name", aide::axum::routing::put(update_app))
         .api_route("/app/:name", aide::axum::routing::delete(delete_app))
         .api_route(
@@ -296,7 +306,7 @@ fn create_router<
         .layer(Extension(api))
 }
 
-#[instrument(skip(ctx, req), fields(user.name = req.user))]
+#[instrument(skip(ctx, req), fields(auth.name = req.user))]
 async fn authenticate_with_password<
     J: JwtEncoder,
     K: KubeClient,
@@ -352,7 +362,7 @@ async fn create_app<J: JwtEncoder, K: KubeClient, M: MailSender, P: PasswordEnco
         services: req.services,
         values: req.values,
     };
-    let span = info_span!("create_app", app.name = req.name,);
+    let span = info_span!("create_app", app.name = req.name, auth.name = spec.owner);
     async {
         debug!("creating app");
         let app = App {
@@ -385,7 +395,7 @@ async fn delete_app<J: JwtEncoder, K: KubeClient, M: MailSender, P: PasswordEnco
     if app.spec.owner != username {
         check_permission(&user, Action::DeleteApp(&name), &ctx.kube).await?;
     }
-    let span = info_span!("delete_app", app.name = name,);
+    let span = info_span!("delete_app", app.name = name, auth.name = username);
     async {
         debug!("deleting app");
         ctx.kube.delete_app(&name).await?;
@@ -399,6 +409,26 @@ async fn delete_app<J: JwtEncoder, K: KubeClient, M: MailSender, P: PasswordEnco
 #[instrument(skip(api))]
 async fn doc(Extension(api): Extension<OpenApi>) -> Json<OpenApi> {
     Json(api)
+}
+
+async fn get_app<J: JwtEncoder, K: KubeClient, M: MailSender, P: PasswordEncoder>(
+    headers: HeaderMap,
+    State(ctx): State<Arc<ApiContext<J, K, M, P>>>,
+    Path(name): Path<String>,
+) -> Result<(StatusCode, Json<AppSpec>)> {
+    let (username, user) = authenticated_user(&headers, &ctx.jwt_encoder, &ctx.kube).await?;
+    let app = ctx
+        .kube
+        .get_app(&name)
+        .await?
+        .ok_or(Error::ResourceNotFound)?;
+    if app.spec.owner != username {
+        check_permission(&user, Action::ReadApp(&name), &ctx.kube).await?;
+    }
+    let span = info_span!("get_app", app.name = name, auth.name = username);
+    async { Ok((StatusCode::OK, Json(app.spec))) }
+        .instrument(span)
+        .await
 }
 
 #[instrument]
@@ -455,6 +485,28 @@ async fn join<J: JwtEncoder, K: KubeClient, M: MailSender, P: PasswordEncoder>(
     .await
 }
 
+async fn list_apps<J: JwtEncoder, K: KubeClient, M: MailSender, P: PasswordEncoder>(
+    headers: HeaderMap,
+    State(ctx): State<Arc<ApiContext<J, K, M, P>>>,
+    Query(filter): Query<AppFilterQuery>,
+) -> Result<(StatusCode, Json<Vec<AppSpec>>)> {
+    let (username, user) = authenticated_user(&headers, &ctx.jwt_encoder, &ctx.kube).await?;
+    let filter = filter.try_into()?;
+    let span = info_span!("list_apps", auth.name = username);
+    async {
+        let apps = ctx
+            .kube
+            .list_apps(&filter, &username, &user)
+            .await?
+            .into_iter()
+            .map(|app| app.spec)
+            .collect();
+        Ok((StatusCode::OK, Json(apps)))
+    }
+    .instrument(span)
+    .await
+}
+
 async fn send_invitation<J: JwtEncoder, K: KubeClient, M: MailSender, P: PasswordEncoder>(
     headers: HeaderMap,
     State(ctx): State<Arc<ApiContext<J, K, M, P>>>,
@@ -475,7 +527,7 @@ async fn send_invitation<J: JwtEncoder, K: KubeClient, M: MailSender, P: Passwor
     };
     let span = info_span!(
         "send_invitation",
-        auth = from,
+        auth.name = from,
         invit.to = spec.to,
         invit.token = token,
     );
@@ -520,7 +572,7 @@ async fn update_app<J: JwtEncoder, K: KubeClient, M: MailSender, P: PasswordEnco
             reason: PreconditionFailedReason::NotFound,
         }));
     }
-    let span = info_span!("update_app", app.name = name,);
+    let span = info_span!("update_app", app.name = name, auth.name = username);
     async {
         debug!("updating app");
         let app = App {
@@ -595,4 +647,31 @@ async fn ensure_domains_are_free<K: KubeClient>(name: &str, svcs: &[Service], ku
             .collect();
         Err(Error::ResourceAlreadyExists(items))
     }
+}
+
+impl TryFrom<AppFilterQuery> for AppFilter {
+    type Error = Error;
+
+    fn try_from(query: AppFilterQuery) -> Result<Self> {
+        let mut errs = ValidationErrors::new();
+        let name = match Regex::new(&query.name) {
+            Ok(name) => name,
+            Err(err) => {
+                errs.add(
+                    "name",
+                    ValidationError::new("regex").with_message(Cow::Owned(err.to_string())),
+                );
+                Regex::new(r".*").unwrap()
+            }
+        };
+        if errs.is_empty() {
+            Ok(Self { name })
+        } else {
+            Err(Error::Validation(errs))
+        }
+    }
+}
+
+fn default_filter() -> String {
+    r".*".into()
 }

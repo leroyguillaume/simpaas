@@ -1,16 +1,19 @@
+use std::collections::HashSet;
+
 use k8s_openapi::api::{core::v1::Namespace, networking::v1::Ingress};
 use kube::{
     api::{DeleteParams, ListParams, Patch, PatchParams},
     Api, Client,
 };
+use regex::Regex;
 use tracing::{debug, instrument, warn};
 
 use crate::{
-    domain::{Action, App, Invitation, PermissionError, Role, Service, User},
+    domain::{Action, App, Invitation, Permission, PermissionError, Role, Service, User},
     CARGO_PKG_NAME,
 };
 
-use super::{DomainUsage, KubeClient, Result};
+use super::{AppFilter, DomainUsage, KubeClient, Result};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -25,6 +28,12 @@ pub enum Error {
         #[from]
         #[source]
         ::kube::Error,
+    ),
+    #[error("regex error: {0}")]
+    Regex(
+        #[from]
+        #[source]
+        regex::Error,
     ),
 }
 
@@ -144,6 +153,49 @@ impl KubeClient for ApiKubeClient {
         api.get_opt(name).await.map_err(super::Error::from)
     }
 
+    #[instrument(skip(self, filter, username, user), fields(filter.name = filter.name.as_str(), user.name = username))]
+    async fn list_apps(&self, filter: &AppFilter, username: &str, user: &User) -> Result<Vec<App>> {
+        let allowed = self
+            .user_permissions(user)
+            .await?
+            .into_iter()
+            .filter_map(|perm| {
+                if let Permission::ReadApp { name } = perm {
+                    Some(Regex::new(&name))
+                } else {
+                    None
+                }
+            })
+            .collect::<std::result::Result<Vec<Regex>, regex::Error>>()?;
+        let api: Api<App> = Api::default_namespaced(self.0.clone());
+        let params = ListParams::default();
+        debug!("listing apps");
+        let apps = api
+            .list(&params)
+            .await?
+            .into_iter()
+            .filter_map(|app| {
+                if let Some(name) = &app.metadata.name {
+                    if app.spec.owner != username
+                        && !allowed.iter().any(|allowed| allowed.is_match(name))
+                    {
+                        debug!(app.name = name, "user is not allowed to get app");
+                        return None;
+                    }
+                    if !filter.name.is_match(name) {
+                        debug!(app.name = name, "app name doesn't match filter");
+                        return None;
+                    }
+                    Some(app)
+                } else {
+                    warn!("app doesn't have name");
+                    None
+                }
+            })
+            .collect();
+        Ok(apps)
+    }
+
     #[instrument(skip(self, name, app), fields(app.name = name))]
     async fn patch_app(&self, name: &str, app: &App) -> Result {
         let api: Api<App> = Api::default_namespaced(self.0.clone());
@@ -185,6 +237,21 @@ impl KubeClient for ApiKubeClient {
         }
         Ok(false)
     }
+
+    #[instrument(skip(self, user))]
+    async fn user_permissions(&self, user: &User) -> Result<HashSet<Permission>> {
+        debug!("getting user permissions");
+        let mut perms = HashSet::new();
+        for role in &user.spec.roles {
+            let role = self.get_role(role).await?;
+            if let Some(role) = role {
+                for perm in role.spec.permissions {
+                    perms.insert(perm);
+                }
+            }
+        }
+        Ok(perms)
+    }
 }
 
 impl From<Error> for super::Error {
@@ -202,5 +269,11 @@ impl From<::kube::Error> for super::Error {
 impl From<PermissionError> for super::Error {
     fn from(err: PermissionError) -> Self {
         Error::Permission(err).into()
+    }
+}
+
+impl From<regex::Error> for super::Error {
+    fn from(err: regex::Error) -> Self {
+        Error::Regex(err).into()
     }
 }
