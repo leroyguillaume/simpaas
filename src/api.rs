@@ -83,8 +83,6 @@ enum Error {
         #[source]
         crate::mail::Error,
     ),
-    #[error("malformed resource")]
-    MalformedResource,
     #[error("{0}")]
     PasswordEncoder(
         #[from]
@@ -341,30 +339,29 @@ async fn create_app<J: JwtEncoder, K: KubeClient, M: MailSender, P: PasswordEnco
     State(ctx): State<Arc<ApiContext<J, K, M, P>>>,
     Json(req): Json<CreateAppRequest>,
 ) -> Result<(StatusCode, Json<AppSpec>)> {
-    req.validate()?;
     let (username, user) = authenticated_user(&headers, &ctx.jwt_encoder, &ctx.kube).await?;
-    check_permission(&user, Action::CreateApp, &ctx.kube).await?;
-    ensure_domains_are_free(&req.name, &req.services, &ctx.kube).await?;
-    if ctx.kube.get_app(&req.name).await?.is_some() {
-        return Err(Error::ResourceAlreadyExists(vec![
-            ResourceAlreadyExistsItem {
-                field: "name".into(),
-                source: Some(req.name.clone()),
-                value: req.name,
-            },
-        ]));
-    }
-    let namespace = req.namespace.unwrap_or_else(|| req.name.clone());
-    let spec = AppSpec {
-        chart: req.chart,
-        namespace,
-        owner: username,
-        services: req.services,
-        values: req.values,
-    };
-    let span = info_span!("create_app", app.name = req.name, auth.name = spec.owner);
+    let span = info_span!("create_app", app.name = req.name, auth.name = username);
     async {
-        debug!("creating app");
+        check_permission(&user, Action::CreateApp, &ctx.kube).await?;
+        req.validate()?;
+        ensure_domains_are_free(&req.name, &req.services, &ctx.kube).await?;
+        if ctx.kube.get_app(&req.name).await?.is_some() {
+            return Err(Error::ResourceAlreadyExists(vec![
+                ResourceAlreadyExistsItem {
+                    field: "name".into(),
+                    source: Some(req.name.clone()),
+                    value: req.name,
+                },
+            ]));
+        }
+        let namespace = req.namespace.unwrap_or_else(|| req.name.clone());
+        let spec = AppSpec {
+            chart: req.chart,
+            namespace,
+            owner: username,
+            services: req.services,
+            values: req.values,
+        };
         let app = App {
             metadata: ObjectMeta {
                 finalizers: Some(vec![FINALIZER.into()]),
@@ -387,17 +384,16 @@ async fn delete_app<J: JwtEncoder, K: KubeClient, M: MailSender, P: PasswordEnco
     Path(name): Path<String>,
 ) -> Result<StatusCode> {
     let (username, user) = authenticated_user(&headers, &ctx.jwt_encoder, &ctx.kube).await?;
-    let app = ctx
-        .kube
-        .get_app(&name)
-        .await?
-        .ok_or(Error::ResourceNotFound)?;
-    if app.spec.owner != username {
-        check_permission(&user, Action::DeleteApp(&name), &ctx.kube).await?;
-    }
     let span = info_span!("delete_app", app.name = name, auth.name = username);
     async {
-        debug!("deleting app");
+        let app = ctx
+            .kube
+            .get_app(&name)
+            .await?
+            .ok_or(Error::ResourceNotFound)?;
+        if app.spec.owner != username {
+            check_permission(&user, Action::DeleteApp(&name), &ctx.kube).await?;
+        }
         ctx.kube.delete_app(&name).await?;
         info!("app deleted");
         Ok(StatusCode::NO_CONTENT)
@@ -417,18 +413,20 @@ async fn get_app<J: JwtEncoder, K: KubeClient, M: MailSender, P: PasswordEncoder
     Path(name): Path<String>,
 ) -> Result<(StatusCode, Json<AppSpec>)> {
     let (username, user) = authenticated_user(&headers, &ctx.jwt_encoder, &ctx.kube).await?;
-    let app = ctx
-        .kube
-        .get_app(&name)
-        .await?
-        .ok_or(Error::ResourceNotFound)?;
-    if app.spec.owner != username {
-        check_permission(&user, Action::ReadApp(&name), &ctx.kube).await?;
-    }
     let span = info_span!("get_app", app.name = name, auth.name = username);
-    async { Ok((StatusCode::OK, Json(app.spec))) }
-        .instrument(span)
-        .await
+    async {
+        let app = ctx
+            .kube
+            .get_app(&name)
+            .await?
+            .ok_or(Error::ResourceNotFound)?;
+        if app.spec.owner != username {
+            check_permission(&user, Action::ReadApp(&name), &ctx.kube).await?;
+        }
+        Ok((StatusCode::OK, Json(app.spec)))
+    }
+    .instrument(span)
+    .await
 }
 
 #[instrument]
@@ -438,51 +436,46 @@ async fn health<J: JwtEncoder, K: KubeClient, M: MailSender, P: PasswordEncoder>
     StatusCode::NO_CONTENT
 }
 
+#[instrument(skip(ctx, token, req), fields(invit.token = token))]
 async fn join<J: JwtEncoder, K: KubeClient, M: MailSender, P: PasswordEncoder>(
     State(ctx): State<Arc<ApiContext<J, K, M, P>>>,
     Path(token): Path<String>,
     Json(req): Json<UserPasswordCredentialsRequest>,
 ) -> Result<(StatusCode, Json<JwtResponse>)> {
     req.validate()?;
-    let span = info_span!("join", invit.token = token);
-    async {
-        debug!("creating user from invitation");
-        if ctx.kube.get_user(&req.user).await?.is_some() {
-            let resp = ResourceAlreadyExistsItem {
-                field: "name".into(),
-                source: Some(req.user.clone()),
-                value: req.user,
-            };
-            return Err(Error::ResourceAlreadyExists(vec![resp]));
-        }
-        let invit = ctx
-            .kube
-            .get_invitation(&token)
-            .await?
-            .ok_or(Error::ResourceNotFound)?;
-        let pwd = ctx.pwd_encoder.encode(&req.password)?;
-        let user = User {
-            metadata: ObjectMeta {
-                name: Some(req.user.clone()),
-                ..Default::default()
-            },
-            spec: UserSpec {
-                email: Some(invit.spec.to),
-                password: Some(pwd),
-                roles: invit.spec.roles,
-            },
+    if ctx.kube.get_user(&req.user).await?.is_some() {
+        let resp = ResourceAlreadyExistsItem {
+            field: "name".into(),
+            source: Some(req.user.clone()),
+            value: req.user,
         };
-        ctx.kube.patch_user(&req.user, &user).await?;
-        info!(user.name = req.user, "user created");
-        ctx.kube.delete_invitation(&token).await?;
-        let jwt = ctx
-            .jwt_encoder
-            .encode(&req.user)
-            .map_err(Error::JwtEncoding)?;
-        Ok((StatusCode::CREATED, Json(JwtResponse { jwt })))
+        return Err(Error::ResourceAlreadyExists(vec![resp]));
     }
-    .instrument(span)
-    .await
+    let invit = ctx
+        .kube
+        .get_invitation(&token)
+        .await?
+        .ok_or(Error::ResourceNotFound)?;
+    let pwd = ctx.pwd_encoder.encode(&req.password)?;
+    let user = User {
+        metadata: ObjectMeta {
+            name: Some(req.user.clone()),
+            ..Default::default()
+        },
+        spec: UserSpec {
+            email: Some(invit.spec.to),
+            password: Some(pwd),
+            roles: invit.spec.roles,
+        },
+    };
+    ctx.kube.patch_user(&req.user, &user).await?;
+    info!(user.name = req.user, "user created");
+    ctx.kube.delete_invitation(&token).await?;
+    let jwt = ctx
+        .jwt_encoder
+        .encode(&req.user)
+        .map_err(Error::JwtEncoding)?;
+    Ok((StatusCode::CREATED, Json(JwtResponse { jwt })))
 }
 
 async fn list_apps<J: JwtEncoder, K: KubeClient, M: MailSender, P: PasswordEncoder>(
@@ -491,9 +484,9 @@ async fn list_apps<J: JwtEncoder, K: KubeClient, M: MailSender, P: PasswordEncod
     Query(filter): Query<AppFilterQuery>,
 ) -> Result<(StatusCode, Json<Vec<AppSpec>>)> {
     let (username, user) = authenticated_user(&headers, &ctx.jwt_encoder, &ctx.kube).await?;
-    let filter = filter.try_into()?;
     let span = info_span!("list_apps", auth.name = username);
     async {
+        let filter = filter.try_into()?;
         let apps = ctx
             .kube
             .list_apps(&filter, &username, &user)
@@ -512,27 +505,22 @@ async fn send_invitation<J: JwtEncoder, K: KubeClient, M: MailSender, P: Passwor
     State(ctx): State<Arc<ApiContext<J, K, M, P>>>,
     Json(req): Json<SendInvitationRequest>,
 ) -> Result<(StatusCode, Json<InvitationSpec>)> {
-    req.validate()?;
-    let (_, user) = authenticated_user(&headers, &ctx.jwt_encoder, &ctx.kube).await?;
-    let from = user.metadata.name.as_ref().ok_or_else(|| {
-        debug!("user doesn't have name");
-        Error::MalformedResource
-    })?;
-    check_permission(&user, Action::InviteUsers, &ctx.kube).await?;
+    let (username, user) = authenticated_user(&headers, &ctx.jwt_encoder, &ctx.kube).await?;
     let token = Uuid::new_v4().to_string();
-    let spec = InvitationSpec {
-        from: from.clone(),
-        roles: req.roles,
-        to: req.to,
-    };
     let span = info_span!(
         "send_invitation",
-        auth.name = from,
-        invit.to = spec.to,
+        auth.name = username,
+        invit.to = req.to,
         invit.token = token,
     );
     async {
-        debug!("sending invitation email");
+        check_permission(&user, Action::InviteUsers, &ctx.kube).await?;
+        req.validate()?;
+        let spec = InvitationSpec {
+            from: username,
+            roles: req.roles,
+            to: req.to,
+        };
         let invit = Invitation {
             metadata: ObjectMeta {
                 name: Some(token.clone()),
@@ -555,26 +543,25 @@ async fn update_app<J: JwtEncoder, K: KubeClient, M: MailSender, P: PasswordEnco
     State(ctx): State<Arc<ApiContext<J, K, M, P>>>,
     Json(req): Json<UpdateAppRequest>,
 ) -> Result<(StatusCode, Json<AppSpec>)> {
-    req.validate()?;
     let (username, user) = authenticated_user(&headers, &ctx.jwt_encoder, &ctx.kube).await?;
-    let app = ctx
-        .kube
-        .get_app(&name)
-        .await?
-        .ok_or(Error::ResourceNotFound)?;
-    if app.spec.owner != username {
-        check_permission(&user, Action::UpdateApp(&name), &ctx.kube).await?;
-    }
-    ensure_domains_are_free(&name, &req.services, &ctx.kube).await?;
-    if ctx.kube.get_user(&req.owner).await?.is_none() {
-        return Err(Error::PreconditionFailed(PreconditionFailedResponse {
-            field: "owner".into(),
-            reason: PreconditionFailedReason::NotFound,
-        }));
-    }
     let span = info_span!("update_app", app.name = name, auth.name = username);
     async {
-        debug!("updating app");
+        let app = ctx
+            .kube
+            .get_app(&name)
+            .await?
+            .ok_or(Error::ResourceNotFound)?;
+        if app.spec.owner != username {
+            check_permission(&user, Action::UpdateApp(&name), &ctx.kube).await?;
+        }
+        req.validate()?;
+        ensure_domains_are_free(&name, &req.services, &ctx.kube).await?;
+        if ctx.kube.get_user(&req.owner).await?.is_none() {
+            return Err(Error::PreconditionFailed(PreconditionFailedResponse {
+                field: "owner".into(),
+                reason: PreconditionFailedReason::NotFound,
+            }));
+        }
         let app = App {
             metadata: ObjectMeta {
                 managed_fields: None,
