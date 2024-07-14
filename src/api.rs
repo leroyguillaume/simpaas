@@ -27,28 +27,25 @@ use crate::{
     domain::{Action, App, AppSpec, Chart, Invitation, InvitationSpec, Service, User, UserSpec},
     jwt::JwtEncoder,
     kube::{AppFilter, KubeClient, FINALIZER},
-    mail::MailSender,
     pwd::PasswordEncoder,
     SignalListener, CARGO_PKG_NAME,
 };
 
 pub const PATH_JOIN: &str = "/join";
 
-pub struct ApiContext<J: JwtEncoder, K: KubeClient, M: MailSender, P: PasswordEncoder> {
+pub struct ApiContext<J: JwtEncoder, K: KubeClient, P: PasswordEncoder> {
     pub jwt_encoder: J,
     pub kube: K,
-    pub mail_sender: M,
     pub pwd_encoder: P,
 }
 
 pub async fn start_api<
     J: JwtEncoder + 'static,
     K: KubeClient + 'static,
-    M: MailSender + 'static,
     P: PasswordEncoder + 'static,
 >(
     addr: SocketAddr,
-    ctx: ApiContext<J, K, M, P>,
+    ctx: ApiContext<J, K, P>,
 ) -> anyhow::Result<()> {
     let mut sig = SignalListener::new()?;
     debug!("binding tcp listener");
@@ -76,12 +73,6 @@ enum Error {
         #[from]
         #[source]
         crate::kube::Error,
-    ),
-    #[error("{0}")]
-    Mail(
-        #[from]
-        #[source]
-        crate::mail::Error,
     ),
     #[error("{0}")]
     PasswordEncoder(
@@ -251,13 +242,8 @@ struct ResourceAlreadyExistsItem {
     value: String,
 }
 
-fn create_router<
-    J: JwtEncoder + 'static,
-    K: KubeClient + 'static,
-    M: MailSender + 'static,
-    P: PasswordEncoder + 'static,
->(
-    ctx: ApiContext<J, K, M, P>,
+fn create_router<J: JwtEncoder + 'static, K: KubeClient + 'static, P: PasswordEncoder + 'static>(
+    ctx: ApiContext<J, K, P>,
 ) -> Router {
     let trace_layer = TraceLayer::new_for_http().make_span_with(|req: &Request<_>| {
         let path = req
@@ -296,7 +282,7 @@ fn create_router<
             &format!("{PATH_JOIN}/:token"),
             aide::axum::routing::put(join),
         )
-        .api_route("/user/invite", aide::axum::routing::post(send_invitation))
+        .api_route("/user/invite", aide::axum::routing::post(create_invitation))
         .route("/_doc", axum::routing::get(doc))
         .finish_api(&mut api)
         .with_state(Arc::new(ctx))
@@ -305,13 +291,8 @@ fn create_router<
 }
 
 #[instrument(skip(ctx, req), fields(auth.name = req.user))]
-async fn authenticate_with_password<
-    J: JwtEncoder,
-    K: KubeClient,
-    M: MailSender,
-    P: PasswordEncoder,
->(
-    State(ctx): State<Arc<ApiContext<J, K, M, P>>>,
+async fn authenticate_with_password<J: JwtEncoder, K: KubeClient, P: PasswordEncoder>(
+    State(ctx): State<Arc<ApiContext<J, K, P>>>,
     Json(req): Json<UserPasswordCredentialsRequest>,
 ) -> Result<(StatusCode, Json<JwtResponse>)> {
     debug!("authenticating user with password");
@@ -334,9 +315,9 @@ async fn authenticate_with_password<
     }
 }
 
-async fn create_app<J: JwtEncoder, K: KubeClient, M: MailSender, P: PasswordEncoder>(
+async fn create_app<J: JwtEncoder, K: KubeClient, P: PasswordEncoder>(
     headers: HeaderMap,
-    State(ctx): State<Arc<ApiContext<J, K, M, P>>>,
+    State(ctx): State<Arc<ApiContext<J, K, P>>>,
     Json(req): Json<CreateAppRequest>,
 ) -> Result<(StatusCode, Json<AppSpec>)> {
     let (username, user) = authenticated_user(&headers, &ctx.jwt_encoder, &ctx.kube).await?;
@@ -378,9 +359,45 @@ async fn create_app<J: JwtEncoder, K: KubeClient, M: MailSender, P: PasswordEnco
     .await
 }
 
-async fn delete_app<J: JwtEncoder, K: KubeClient, M: MailSender, P: PasswordEncoder>(
+async fn create_invitation<J: JwtEncoder, K: KubeClient, P: PasswordEncoder>(
     headers: HeaderMap,
-    State(ctx): State<Arc<ApiContext<J, K, M, P>>>,
+    State(ctx): State<Arc<ApiContext<J, K, P>>>,
+    Json(req): Json<SendInvitationRequest>,
+) -> Result<(StatusCode, Json<InvitationSpec>)> {
+    let (username, user) = authenticated_user(&headers, &ctx.jwt_encoder, &ctx.kube).await?;
+    let token = Uuid::new_v4().to_string();
+    let span = info_span!(
+        "create_invitation",
+        auth.name = username,
+        invit.to = req.to,
+        invit.token = token,
+    );
+    async {
+        check_permission(&user, Action::InviteUsers, &ctx.kube).await?;
+        req.validate()?;
+        let spec = InvitationSpec {
+            from: username,
+            roles: req.roles,
+            to: req.to,
+        };
+        let invit = Invitation {
+            metadata: ObjectMeta {
+                name: Some(token.clone()),
+                ..Default::default()
+            },
+            spec,
+        };
+        ctx.kube.patch_invitation(&token, &invit).await?;
+        info!("invitation created");
+        Ok((StatusCode::CREATED, Json(invit.spec)))
+    }
+    .instrument(span)
+    .await
+}
+
+async fn delete_app<J: JwtEncoder, K: KubeClient, P: PasswordEncoder>(
+    headers: HeaderMap,
+    State(ctx): State<Arc<ApiContext<J, K, P>>>,
     Path(name): Path<String>,
 ) -> Result<StatusCode> {
     let (username, user) = authenticated_user(&headers, &ctx.jwt_encoder, &ctx.kube).await?;
@@ -407,9 +424,9 @@ async fn doc(Extension(api): Extension<OpenApi>) -> Json<OpenApi> {
     Json(api)
 }
 
-async fn get_app<J: JwtEncoder, K: KubeClient, M: MailSender, P: PasswordEncoder>(
+async fn get_app<J: JwtEncoder, K: KubeClient, P: PasswordEncoder>(
     headers: HeaderMap,
-    State(ctx): State<Arc<ApiContext<J, K, M, P>>>,
+    State(ctx): State<Arc<ApiContext<J, K, P>>>,
     Path(name): Path<String>,
 ) -> Result<(StatusCode, Json<AppSpec>)> {
     let (username, user) = authenticated_user(&headers, &ctx.jwt_encoder, &ctx.kube).await?;
@@ -430,15 +447,15 @@ async fn get_app<J: JwtEncoder, K: KubeClient, M: MailSender, P: PasswordEncoder
 }
 
 #[instrument]
-async fn health<J: JwtEncoder, K: KubeClient, M: MailSender, P: PasswordEncoder>(
-    _: State<Arc<ApiContext<J, K, M, P>>>,
+async fn health<J: JwtEncoder, K: KubeClient, P: PasswordEncoder>(
+    _: State<Arc<ApiContext<J, K, P>>>,
 ) -> StatusCode {
     StatusCode::NO_CONTENT
 }
 
 #[instrument(skip(ctx, token, req), fields(invit.token = token))]
-async fn join<J: JwtEncoder, K: KubeClient, M: MailSender, P: PasswordEncoder>(
-    State(ctx): State<Arc<ApiContext<J, K, M, P>>>,
+async fn join<J: JwtEncoder, K: KubeClient, P: PasswordEncoder>(
+    State(ctx): State<Arc<ApiContext<J, K, P>>>,
     Path(token): Path<String>,
     Json(req): Json<UserPasswordCredentialsRequest>,
 ) -> Result<(StatusCode, Json<JwtResponse>)> {
@@ -478,9 +495,9 @@ async fn join<J: JwtEncoder, K: KubeClient, M: MailSender, P: PasswordEncoder>(
     Ok((StatusCode::CREATED, Json(JwtResponse { jwt })))
 }
 
-async fn list_apps<J: JwtEncoder, K: KubeClient, M: MailSender, P: PasswordEncoder>(
+async fn list_apps<J: JwtEncoder, K: KubeClient, P: PasswordEncoder>(
     headers: HeaderMap,
-    State(ctx): State<Arc<ApiContext<J, K, M, P>>>,
+    State(ctx): State<Arc<ApiContext<J, K, P>>>,
     Query(filter): Query<AppFilterQuery>,
 ) -> Result<(StatusCode, Json<Vec<AppSpec>>)> {
     let (username, user) = authenticated_user(&headers, &ctx.jwt_encoder, &ctx.kube).await?;
@@ -500,47 +517,10 @@ async fn list_apps<J: JwtEncoder, K: KubeClient, M: MailSender, P: PasswordEncod
     .await
 }
 
-async fn send_invitation<J: JwtEncoder, K: KubeClient, M: MailSender, P: PasswordEncoder>(
-    headers: HeaderMap,
-    State(ctx): State<Arc<ApiContext<J, K, M, P>>>,
-    Json(req): Json<SendInvitationRequest>,
-) -> Result<(StatusCode, Json<InvitationSpec>)> {
-    let (username, user) = authenticated_user(&headers, &ctx.jwt_encoder, &ctx.kube).await?;
-    let token = Uuid::new_v4().to_string();
-    let span = info_span!(
-        "send_invitation",
-        auth.name = username,
-        invit.to = req.to,
-        invit.token = token,
-    );
-    async {
-        check_permission(&user, Action::InviteUsers, &ctx.kube).await?;
-        req.validate()?;
-        let spec = InvitationSpec {
-            from: username,
-            roles: req.roles,
-            to: req.to,
-        };
-        let invit = Invitation {
-            metadata: ObjectMeta {
-                name: Some(token.clone()),
-                ..Default::default()
-            },
-            spec,
-        };
-        ctx.kube.patch_invitation(&token, &invit).await?;
-        ctx.mail_sender.send_invitation(&token, &invit).await?;
-        info!("invitation sent");
-        Ok((StatusCode::CREATED, Json(invit.spec)))
-    }
-    .instrument(span)
-    .await
-}
-
-async fn update_app<J: JwtEncoder, K: KubeClient, M: MailSender, P: PasswordEncoder>(
+async fn update_app<J: JwtEncoder, K: KubeClient, P: PasswordEncoder>(
     headers: HeaderMap,
     Path(name): Path<String>,
-    State(ctx): State<Arc<ApiContext<J, K, M, P>>>,
+    State(ctx): State<Arc<ApiContext<J, K, P>>>,
     Json(req): Json<UpdateAppRequest>,
 ) -> Result<(StatusCode, Json<AppSpec>)> {
     let (username, user) = authenticated_user(&headers, &ctx.jwt_encoder, &ctx.kube).await?;

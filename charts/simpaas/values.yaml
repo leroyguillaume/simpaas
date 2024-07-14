@@ -28,8 +28,6 @@ common:
 
   tolerations: []
 
-  webappUrl: ~
-
   otelCollectorUrl: http://simpaas-opentelemetry-collector:4317
 
   logFilter: ~
@@ -92,17 +90,6 @@ api:
 
   logFilter: ~
 
-  smtp:
-    host: ~
-    port: 25
-    tls: false
-    implicitTls: false
-    authEnabled: false
-    credentialsSecret:
-      name: ~
-      userKey: user
-      passwordKey: password
-
   ingress:
     enabled: true
     domain: ~
@@ -158,6 +145,19 @@ op:
   chartValues: {}
 
   logFilter: ~
+
+  smtp:
+    host: ~
+    port: 25
+    tls: false
+    implicitTls: false
+    authEnabled: false
+    credentialsSecret:
+      name: ~
+      userKey: user
+      passwordKey: password
+
+  webappUrl: ~
 
 webapp:
   port: 3000
