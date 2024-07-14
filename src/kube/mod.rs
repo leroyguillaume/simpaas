@@ -1,6 +1,9 @@
-use futures::Future;
+use std::collections::HashSet;
 
-use crate::domain::{Action, App, Invitation, Role, Service, User};
+use futures::Future;
+use regex::Regex;
+
+use crate::domain::{Action, App, Invitation, Permission, Role, Service, User};
 
 pub mod api;
 
@@ -12,6 +15,12 @@ pub type Result<T = ()> = std::result::Result<T, Error>;
 #[error("kubernetes error: {0}")]
 pub struct Error(#[source] pub Box<dyn std::error::Error + Send + Sync>);
 
+#[derive(Clone, Debug)]
+pub struct AppFilter {
+    pub name: Regex,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DomainUsage {
     /// App that owns domain.
     pub app: Option<String>,
@@ -43,6 +52,13 @@ pub trait KubeClient: Send + Sync {
 
     fn get_user(&self, name: &str) -> impl Future<Output = Result<Option<User>>> + Send;
 
+    fn list_apps(
+        &self,
+        filter: &AppFilter,
+        username: &str,
+        user: &User,
+    ) -> impl Future<Output = Result<Vec<App>>> + Send;
+
     fn patch_app(&self, name: &str, app: &App) -> impl Future<Output = Result> + Send;
 
     fn patch_invitation(
@@ -58,4 +74,9 @@ pub trait KubeClient: Send + Sync {
         user: &User,
         action: Action,
     ) -> impl Future<Output = Result<bool>> + Send;
+
+    fn user_permissions(
+        &self,
+        user: &User,
+    ) -> impl Future<Output = Result<HashSet<Permission>>> + Send;
 }
