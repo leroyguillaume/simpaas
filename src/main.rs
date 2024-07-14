@@ -56,7 +56,6 @@ async fn main() -> anyhow::Result<()> {
             let ctx = ApiContext {
                 jwt_encoder: DefaultJwtEncoder::new(args.jwt)?,
                 kube: ApiKubeClient::new(kube),
-                mail_sender: DefaultMailSender::new(args.mail, args.webapp_url)?,
                 pwd_encoder: BcryptPasswordEncoder,
             };
             start_api(args.bind_addr, ctx).await
@@ -64,14 +63,14 @@ async fn main() -> anyhow::Result<()> {
         Command::Crd { cmd } => cmd.print(),
         Command::Op(args) => {
             let kube = ::kube::Client::try_default().await?;
-            let api = ::kube::Api::default_namespaced(kube.clone());
             let helm = CliHelmClient::new(args.helm);
             let ctx = OpContext {
                 deployer: HelmDeployer::new(args.deployer, helm),
-                kube: ApiKubeClient::new(kube),
+                kube: ApiKubeClient::new(kube.clone()),
+                mail_sender: DefaultMailSender::new(args.mail, args.webapp_url)?,
                 requeue_delay: Duration::from_secs(args.requeue_delay),
             };
-            start_op(api, ctx).await
+            start_op(kube, ctx).await
         }
     }
 }
@@ -149,15 +148,6 @@ struct ApiArgs {
     bind_addr: SocketAddr,
     #[command(flatten)]
     jwt: DefaultJwtEncoderArgs,
-    #[command(flatten)]
-    mail: DefaultMailSenderArgs,
-    #[arg(
-        long,
-        env,
-        default_value = "http://localhost:3000",
-        long_help = "WebApp URL"
-    )]
-    webapp_url: String,
 }
 
 impl Default for ApiArgs {
@@ -165,8 +155,6 @@ impl Default for ApiArgs {
         Self {
             bind_addr: SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(0, 0, 0, 0), 8080)),
             jwt: DefaultJwtEncoderArgs::default(),
-            mail: DefaultMailSenderArgs::default(),
-            webapp_url: "http://localhost:3000".into(),
         }
     }
 }
@@ -177,6 +165,8 @@ struct OpArgs {
     deployer: HelmDeployerArgs,
     #[command(flatten)]
     helm: CliHelmClientArgs,
+    #[command(flatten)]
+    mail: DefaultMailSenderArgs,
     #[arg(
         long,
         env,
@@ -184,6 +174,13 @@ struct OpArgs {
         long_help = "Number of seconds between CRD check"
     )]
     requeue_delay: u64,
+    #[arg(
+        long,
+        env,
+        default_value = "http://localhost:3000",
+        long_help = "WebApp URL"
+    )]
+    webapp_url: String,
 }
 
 impl Default for OpArgs {
@@ -191,7 +188,9 @@ impl Default for OpArgs {
         Self {
             deployer: Default::default(),
             helm: Default::default(),
+            mail: DefaultMailSenderArgs::default(),
             requeue_delay: 10,
+            webapp_url: "http://localhost:3000".into(),
         }
     }
 }
