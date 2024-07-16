@@ -45,13 +45,14 @@ pub async fn start_api<
     P: PasswordEncoder + 'static,
 >(
     addr: SocketAddr,
+    root_path: &str,
     ctx: ApiContext<J, K, P>,
 ) -> anyhow::Result<()> {
     let mut sig = SignalListener::new()?;
     debug!("binding tcp listener");
     let tcp = TcpListener::bind(addr).await?;
     info!("server started");
-    axum::serve(tcp, create_router(ctx))
+    axum::serve(tcp, create_router(root_path, ctx))
         .with_graceful_shutdown(async move { sig.recv().await })
         .await?;
     info!("server stopped");
@@ -243,6 +244,7 @@ struct ResourceAlreadyExistsItem {
 }
 
 fn create_router<J: JwtEncoder + 'static, K: KubeClient + 'static, P: PasswordEncoder + 'static>(
+    root_path: &str,
     ctx: ApiContext<J, K, P>,
 ) -> Router {
     let trace_layer = TraceLayer::new_for_http().make_span_with(|req: &Request<_>| {
@@ -267,7 +269,7 @@ fn create_router<J: JwtEncoder + 'static, K: KubeClient + 'static, P: PasswordEn
         },
         ..Default::default()
     };
-    ApiRouter::new()
+    let router = ApiRouter::new()
         .api_route("/_health", aide::axum::routing::get(health))
         .api_route("/app", aide::axum::routing::get(list_apps))
         .api_route("/app", aide::axum::routing::post(create_app))
@@ -283,7 +285,9 @@ fn create_router<J: JwtEncoder + 'static, K: KubeClient + 'static, P: PasswordEn
             aide::axum::routing::put(join),
         )
         .api_route("/user/invite", aide::axum::routing::post(create_invitation))
-        .route("/_doc", axum::routing::get(doc))
+        .route("/_doc", axum::routing::get(doc));
+    ApiRouter::new()
+        .nest(root_path, router)
         .finish_api(&mut api)
         .with_state(Arc::new(ctx))
         .layer(trace_layer)

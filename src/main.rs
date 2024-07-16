@@ -58,7 +58,7 @@ async fn main() -> anyhow::Result<()> {
                 kube: ApiKubeClient::new(kube),
                 pwd_encoder: BcryptPasswordEncoder,
             };
-            start_api(args.bind_addr, ctx).await
+            start_api(args.bind_addr, &args.root_path, ctx).await
         }
         Command::Crd { cmd } => cmd.print(),
         Command::Op(args) => {
@@ -148,6 +148,8 @@ struct ApiArgs {
     bind_addr: SocketAddr,
     #[command(flatten)]
     jwt: DefaultJwtEncoderArgs,
+    #[arg(long, env, default_value = "/", long_help = "Root endpoints path")]
+    root_path: String,
 }
 
 impl Default for ApiArgs {
@@ -155,6 +157,7 @@ impl Default for ApiArgs {
         Self {
             bind_addr: SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(0, 0, 0, 0), 8080)),
             jwt: DefaultJwtEncoderArgs::default(),
+            root_path: "/".into(),
         }
     }
 }
