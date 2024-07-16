@@ -1,4 +1,15 @@
 {{- if .Values.smtp.enabled }}
+{{- $podAnnotations := merge .Values.common.podAnnotations .Values.smtp.podAnnotations -}}
+{{- $podLabels := merge .Values.common.podLabels .Values.smtp.podLabels -}}
+{{- $imagePullSecrets := concat .Values.common.imagePullSecrets .Values.smtp.imagePullSecrets -}}
+{{- $podSecurityContext := merge .Values.common.podSecurityContext .Values.smtp.podSecurityContext -}}
+{{- $securityContext := merge .Values.common.securityContext .Values.smtp.securityContext -}}
+{{- $env := concat .Values.common.env .Values.smtp.env -}}
+{{- $volumeMounts := concat .Values.common.volumeMounts .Values.smtp.volumeMounts -}}
+{{- $volumes := concat .Values.common.volumes .Values.smtp.volumes -}}
+{{- $nodeSelector := merge .Values.common.nodeSelector .Values.smtp.nodeSelector -}}
+{{- $affinity := merge .Values.common.affinity .Values.smtp.affinity -}}
+{{- $tolerations := concat .Values.common.tolerations .Values.smtp.tolerations -}}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -12,27 +23,27 @@ spec:
       {{- include "simpaas.smtp.selectorLabels" . | nindent 6 }}
   template:
     metadata:
-      {{- with .Values.smtp.podAnnotations }}
+      {{- with $podAnnotations }}
       annotations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       labels:
         {{- include "simpaas.smtp.labels" . | nindent 8 }}
-        {{- with .Values.smtp.podLabels }}
+        {{- with $podLabels }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
     spec:
-      {{- with .Values.smtp.imagePullSecrets }}
+      {{- with $imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       serviceAccountName: {{ include "simpaas.serviceAccountName" . }}
       securityContext:
-        {{- toYaml .Values.smtp.podSecurityContext | nindent 8 }}
+        {{- toYaml $podSecurityContext | nindent 8 }}
       containers:
       - name: smtp
         securityContext:
-          {{- toYaml .Values.smtp.securityContext | nindent 12 }}
+          {{- toYaml $securityContext | nindent 12 }}
         image: {{ printf "%s:%s" .Values.smtp.image.repository .Values.smtp.image.tag }}
         imagePullPolicy: {{ default .Values.common.image.pullPolicy .Values.smtp.image.pullPolicy }}
         ports:
@@ -55,23 +66,23 @@ spec:
         {{- end }}
         resources:
           {{- toYaml .Values.smtp.resources | nindent 10 }}
-        {{- with .Values.smtp.volumeMounts }}
+        {{- with $volumeMounts }}
         volumeMounts:
         {{- toYaml . | nindent 8 }}
         {{- end }}
-      {{- with .Values.smtp.volumes }}
+      {{- with $volumes }}
       volumes:
       {{- toYaml . | nindent 6 }}
       {{- end }}
-      {{- with .Values.smtp.nodeSelector }}
+      {{- with $nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- with .Values.smtp.affinity }}
+      {{- with $affinity }}
       affinity:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- with .Values.smtp.tolerations }}
+      {{- with $tolerations }}
       tolerations:
         {{- toYaml . | nindent 8 }}
       {{- end }}

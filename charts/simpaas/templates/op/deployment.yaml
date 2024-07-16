@@ -48,6 +48,14 @@ spec:
           {{- toYaml $securityContext | nindent 12 }}
         image: {{ printf "%s:%s" .Values.op.image.repository (include "simpaas.op.tag" .) }}
         imagePullPolicy: {{ default .Values.common.image.pullPolicy .Values.op.image.pullPolicy }}
+        {{- with .Values.op.livenessProbe }}
+        livenessProbe:
+          {{ toYaml . | nindent 10 }}
+        {{- end }}
+        {{- with .Values.op.readinessProbe }}
+        readinessProbe:
+          {{ toYaml . | nindent 10 }}
+        {{- end }}
         env:
         - name: CHART_VALUES
           value: {{ printf "%s/values.yaml" $chartValuesDir }}
