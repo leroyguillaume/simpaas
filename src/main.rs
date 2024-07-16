@@ -7,6 +7,7 @@ use std::{
 use ::kube::CustomResourceExt;
 use api::{start_api, ApiContext};
 use clap::{Parser, Subcommand};
+use cmd::default::DefaultCommandRunner;
 use deploy::helm::{HelmDeployer, HelmDeployerArgs};
 use domain::{App, Invitation, Role, User};
 use helm::cli::{CliHelmClient, CliHelmClientArgs};
@@ -37,6 +38,7 @@ use tracing_subscriber::{
 };
 
 mod api;
+mod cmd;
 mod deploy;
 mod domain;
 mod helm;
@@ -63,7 +65,7 @@ async fn main() -> anyhow::Result<()> {
         Command::Crd { cmd } => cmd.print(),
         Command::Op(args) => {
             let kube = ::kube::Client::try_default().await?;
-            let helm = CliHelmClient::new(args.helm);
+            let helm = CliHelmClient::new(args.helm, DefaultCommandRunner);
             let ctx = OpContext {
                 deployer: HelmDeployer::new(args.deployer, helm),
                 kube: ApiKubeClient::new(kube.clone()),
