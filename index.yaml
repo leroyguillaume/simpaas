@@ -3,7 +3,28 @@ entries:
   simpaas:
   - apiVersion: v2
     appVersion: 0.1.0
-    created: "2024-07-17T18:17:26.834071941Z"
+    created: "2024-07-17T18:29:08.674552291Z"
+    description: A Helm chart for SimPaaS
+    digest: f428e0d3bde70de8b34c30298852c7a4654ded2c2b98887c9139a60723b7ce46
+    name: simpaas
+    type: application
+    urls:
+    - simpaas-0.1.0.tgz
+    version: 0.1.0
+  simpaas-app:
+  - apiVersion: v2
+    created: "2024-07-17T18:29:08.674773225Z"
+    description: A Helm chart for SimPaaS application
+    digest: 24230804d6bb4d60e9391b2a03dd43c0c3f6009374cbc273add88c539aa062bf
+    name: simpaas-app
+    type: application
+    urls:
+    - simpaas-app-0.1.0.tgz
+    version: 0.1.0
+  simpaas-bundle:
+  - apiVersion: v2
+    appVersion: 0.1.0
+    created: "2024-07-17T18:29:08.682031397Z"
     dependencies:
     - condition: cert-manager.enabled
       name: cert-manager
@@ -17,20 +38,10 @@ entries:
       repository: file://../simpaas
       version: ~0
     description: A Helm chart for complete SimPaaS stack
-    digest: c1c863fbf9404487b5559703d73429b9e59a411f3d7e1867c85ef28aeb30f79f
-    name: simpaas
+    digest: 1d6a43e2a363bf7c4f5be7e4c955a8370b182a10feb357b3e4e331884fa3e3e6
+    name: simpaas-bundle
     type: application
     urls:
-    - simpaas-0.1.0.tgz
+    - simpaas-bundle-0.1.0.tgz
     version: 0.1.0
-  simpaas-app:
-  - apiVersion: v2
-    created: "2024-07-17T18:17:26.834288426Z"
-    description: A Helm chart for SimPaaS application
-    digest: dd7e934323a17c012a67c571e8f1c5a1c94c6bf2a13d8d76082f95cbc1b74656
-    name: simpaas-app
-    type: application
-    urls:
-    - simpaas-app-0.1.0.tgz
-    version: 0.1.0
-generated: "2024-07-17T18:17:26.826972256Z"
+generated: "2024-07-17T18:29:08.673752081Z"
