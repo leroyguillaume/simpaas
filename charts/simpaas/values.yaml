@@ -75,11 +75,11 @@ api:
 
   livenessProbe:
     httpGet:
-      path: /_health
+      path: /api/_health
       port: http
   readinessProbe:
     httpGet:
-      path: /_health
+      path: /api/_health
       port: http
 
   jwtSecret:
@@ -94,7 +94,7 @@ api:
     domain: ~
     fqdn: ~
     tls: false
-    path: /api/(.*)
+    path: /api
     pathType: ImplementationSpecific
 
   roleAdmin:
@@ -184,8 +184,7 @@ ingress:
   className: ~
   domain: ~
   tlsSecretName: ~
-  annotations:
-    nginx.ingress.kubernetes.io/rewrite-target: /$1
+  annotations: {}
 
 cert-manager:
   clusterIssuers: []
