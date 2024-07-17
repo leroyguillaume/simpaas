@@ -67,7 +67,7 @@ spec:
               key: {{ .Values.api.jwtSecret.key }}
         - name: ROOT_PATH
           value: {{ .Values.api.ingress.path }}
-        {{- include "simpaas.env" (dict "Values" .Values "Service" .Values.api) | nindent 8 }}
+        {{- include "simpaas.env" (dict "Release" .Release "Service" .Values.api "Values" .Values) | nindent 8 }}
         {{- with $env }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
