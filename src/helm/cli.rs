@@ -1,36 +1,24 @@
-use std::{
-    path::PathBuf,
-    process::{ExitStatus, Output},
+use std::path::PathBuf;
+
+use tracing::{debug, error, instrument};
+
+use crate::{
+    cmd::CommandRunner,
+    domain::{App, Chart},
 };
-
-use tokio::process::Command;
-use tracing::{debug, error, instrument, Level};
-
-use crate::domain::{App, Chart};
 
 use super::{HelmClient, Result};
 
-macro_rules! log_output {
-    ($lvl:ident, $output:expr) => {{
-        let output = String::from_utf8_lossy(&$output);
-        for line in output.lines() {
-            $lvl!("helm: {line}");
-        }
-    }};
-}
-
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    #[error("helm {0}")]
-    Command(ExitStatus),
-    #[error("invalid unicode")]
-    InvalidUnicode,
-    #[error("i/o error: {0}")]
-    Io(
+    #[error("{0}")]
+    Command(
         #[from]
         #[source]
-        std::io::Error,
+        crate::cmd::Error,
     ),
+    #[error("invalid unicode")]
+    InvalidUnicode,
 }
 
 #[derive(clap::Args, Clone, Debug, Eq, PartialEq)]
@@ -61,61 +49,58 @@ impl Default for CliHelmClientArgs {
     }
 }
 
-pub struct CliHelmClient(CliHelmClientArgs);
+pub struct CliHelmClient<R: CommandRunner> {
+    args: CliHelmClientArgs,
+    runner: R,
+}
 
-impl CliHelmClient {
-    pub fn new(args: CliHelmClientArgs) -> Self {
-        Self(args)
-    }
-
-    fn handle_output(output: Output) -> Result {
-        if tracing::enabled!(Level::DEBUG) {
-            log_output!(debug, output.stdout);
-        }
-        if output.status.success() {
-            if tracing::enabled!(Level::DEBUG) {
-                log_output!(debug, output.stderr);
-            }
-            Ok(())
-        } else {
-            log_output!(error, output.stderr);
-            Err(Error::Command(output.status).into())
-        }
+impl<R: CommandRunner> CliHelmClient<R> {
+    pub fn new(args: CliHelmClientArgs, runner: R) -> Self {
+        Self { args, runner }
     }
 }
 
-impl HelmClient for CliHelmClient {
+impl<R: CommandRunner> HelmClient for CliHelmClient<R> {
     #[instrument("helm_uninstall", skip(self, name, app), fields(app.name = name, app.namespace = app.spec.namespace))]
     async fn uninstall(&self, name: &str, app: &App) -> Result {
         debug!("running helm uninstall");
-        let output = Command::new(&self.0.bin)
-            .arg("uninstall")
-            .arg("-n")
-            .arg(&app.spec.namespace)
-            .arg("--ignore-not-found")
-            .arg(name)
-            .output()
+        self.runner
+            .run(
+                "helm",
+                &[
+                    "uninstall",
+                    "-n",
+                    &app.spec.namespace,
+                    "--ignore-not-found",
+                    name,
+                ],
+            )
             .await?;
-        Self::handle_output(output)
+        Ok(())
     }
 
     #[instrument("helm_upgrade", skip(self, app, filepaths), fields(app.chart = %app.spec.chart, app.name = name, app.namespace = app.spec.namespace))]
     async fn upgrade(&self, name: &str, app: &App, filepaths: &[PathBuf]) -> Result {
         let chart = match &app.spec.chart {
-            Chart::BuiltIn {} => self.0.chart_path.to_str().ok_or(Error::InvalidUnicode)?,
+            Chart::BuiltIn {} => self.args.chart_path.to_str().ok_or(Error::InvalidUnicode)?,
         };
-        let mut cmd = Command::new(&self.0.bin);
-        cmd.arg("upgrade")
-            .arg("-n")
-            .arg(&app.spec.namespace)
-            .arg("--create-namespace")
-            .arg("--install");
+        let mut args = vec![
+            "upgrade",
+            "-n",
+            &app.spec.namespace,
+            "--create-namespace",
+            "--install",
+        ];
         for path in filepaths {
-            cmd.arg("--values").arg(path);
+            let path = path.to_str().ok_or(Error::InvalidUnicode)?;
+            args.push("--values");
+            args.push(path);
         }
         debug!("running helm upgrade");
-        let output = cmd.arg(name).arg(chart).output().await?;
-        Self::handle_output(output)
+        args.push(name);
+        args.push(chart);
+        self.runner.run("helm", &args).await?;
+        Ok(())
     }
 }
 
@@ -125,8 +110,8 @@ impl From<Error> for super::Error {
     }
 }
 
-impl From<std::io::Error> for super::Error {
-    fn from(err: std::io::Error) -> Self {
-        Error::Io(err).into()
+impl From<crate::cmd::Error> for super::Error {
+    fn from(err: crate::cmd::Error) -> Self {
+        Error::Command(err).into()
     }
 }
