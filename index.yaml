@@ -3,14 +3,9 @@ entries:
   simpaas:
   - apiVersion: v2
     appVersion: 0.1.0
-    created: "2024-07-19T09:44:42.076812403Z"
-    dependencies:
-    - condition: opentelemetry-collector.enabled
-      name: opentelemetry-collector
-      repository: https://open-telemetry.github.io/opentelemetry-helm-charts
-      version: ~0
+    created: "2024-07-19T19:04:58.519873454Z"
     description: A Helm chart for SimPaaS
-    digest: 924e3cfa7eaddf3b1ab0c1cc90b0ec8dbe47bb6b0429bfec05a62241c4dea13d
+    digest: 37a6964e83ec801984737278ff31a5992fd8c2d4bcb2f9de417a6dbe0aabb68f
     name: simpaas
     type: application
     urls:
@@ -18,35 +13,12 @@ entries:
     version: 0.1.0
   simpaas-app:
   - apiVersion: v2
-    created: "2024-07-19T09:44:42.077070616Z"
+    created: "2024-07-19T19:04:58.520296598Z"
     description: A Helm chart for SimPaaS application
-    digest: 67b55575861f2419bc5d4e0f0e023f50f9d6d9835cded042a06ddf5ad82be3c2
+    digest: 14acb80cb27dcfa34f54660929006782890146b2c247b1b04af564c07d9a6230
     name: simpaas-app
     type: application
     urls:
     - simpaas-app-0.1.0.tgz
     version: 0.1.0
-  simpaas-bundle:
-  - apiVersion: v2
-    appVersion: 0.1.0
-    created: "2024-07-19T09:44:42.08433942Z"
-    dependencies:
-    - condition: cert-manager.enabled
-      name: cert-manager
-      repository: https://charts.jetstack.io
-      version: ~1
-    - condition: opentelemetry-collector.enabled
-      name: opentelemetry-collector
-      repository: https://open-telemetry.github.io/opentelemetry-helm-charts
-      version: ~0
-    - name: simpaas
-      repository: file://../simpaas
-      version: ~0
-    description: A Helm chart for complete SimPaaS stack
-    digest: 1d6a43e2a363bf7c4f5be7e4c955a8370b182a10feb357b3e4e331884fa3e3e6
-    name: simpaas-bundle
-    type: application
-    urls:
-    - simpaas-bundle-0.1.0.tgz
-    version: 0.1.0
-generated: "2024-07-19T09:44:42.073091722Z"
+generated: "2024-07-19T19:04:58.518644828Z"
