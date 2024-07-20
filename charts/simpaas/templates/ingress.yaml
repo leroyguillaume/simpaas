@@ -3,7 +3,8 @@
 {{- $tlsHosts := list -}}
 {{- $apiIngress := dict "Ingress" .Values.api.ingress "Service" (dict "Name" (include "simpaas.api.name" .) "Port" .Values.api.port) "Values" .Values -}}
 {{- $webappIngress := dict "Ingress" .Values.webapp.ingress "Service" (dict "Name" (include "simpaas.webapp.name" .) "Port" .Values.webapp.port) "Values" .Values -}}
-{{- $ingresses := list $apiIngress $webappIngress -}}
+{{- $swaggerUiIngress := dict "Ingress" .Values.swaggerUi.ingress "Service" (dict "Name" (include "simpaas.swaggerUi.name" .) "Port" .Values.swaggerUi.port) "Values" .Values -}}
+{{- $ingresses := list $apiIngress $webappIngress $swaggerUiIngress -}}
 {{- range $ingress := $ingresses -}}
 {{- if $ingress.Ingress.enabled -}}
 {{- $fqdn := include "simpaas.fqdn" $ingress -}}

@@ -1,0 +1,95 @@
+{{- if .Values.swaggerUi.enabled }}
+{{- $podAnnotations := merge .Values.common.podAnnotations .Values.swaggerUi.podAnnotations -}}
+{{- $podLabels := merge .Values.common.podLabels .Values.swaggerUi.podLabels -}}
+{{- $imagePullSecrets := concat .Values.common.imagePullSecrets .Values.swaggerUi.imagePullSecrets -}}
+{{- $podSecurityContext := merge .Values.common.podSecurityContext .Values.swaggerUi.podSecurityContext -}}
+{{- $securityContext := merge .Values.common.securityContext .Values.swaggerUi.securityContext -}}
+{{- $env := concat .Values.common.env .Values.swaggerUi.env -}}
+{{- $volumeMounts := concat .Values.common.volumeMounts .Values.swaggerUi.volumeMounts -}}
+{{- $volumes := concat .Values.common.volumes .Values.swaggerUi.volumes -}}
+{{- $nodeSelector := merge .Values.common.nodeSelector .Values.swaggerUi.nodeSelector -}}
+{{- $affinity := merge .Values.common.affinity .Values.swaggerUi.affinity -}}
+{{- $tolerations := concat .Values.common.tolerations .Values.swaggerUi.tolerations -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "simpaas.swaggerUi.name" . }}
+  labels:
+    {{- include "simpaas.swaggerUi.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.swaggerUi.replicas }}
+  selector:
+    matchLabels:
+      {{- include "simpaas.swaggerUi.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      {{- with $podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "simpaas.swaggerUi.labels" . | nindent 8 }}
+        {{- with $podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- with $imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "simpaas.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml $podSecurityContext | nindent 8 }}
+      containers:
+      - name: swagger-ui
+        securityContext:
+          {{- toYaml $securityContext | nindent 12 }}
+        image: {{ printf "%s:%s" .Values.swaggerUi.image.repository .Values.swaggerUi.image.tag }}
+        imagePullPolicy: {{ default .Values.common.image.pullPolicy .Values.swaggerUi.image.pullPolicy }}
+        ports:
+        - name: http
+          containerPort: {{ .Values.swaggerUi.port }}
+          protocol: TCP
+        {{- with .Values.swaggerUi.livenessProbe }}
+        livenessProbe:
+          {{ toYaml . | nindent 10 }}
+        {{- end }}
+        {{- with .Values.swaggerUi.readinessProbe }}
+        readinessProbe:
+          {{ toYaml . | nindent 10 }}
+        {{- end }}
+        env:
+        - name: BASE_URL
+          value: {{ .Values.swaggerUi.ingress.path }}
+        {{- if and .Values.ingress.create .Values.api.ingress.enabled }}
+        {{- $apiFqdn := include "simpaas.fqdn" (dict "Ingress" .Values.api.ingress "Values" .Values) }}
+        {{- $protocol := .Values.api.ingress.tls | ternary "https" "http" }}
+        - name: SWAGGER_JSON_URL
+          value: {{ printf "%s://%s%s/_doc" $protocol $apiFqdn .Values.api.ingress.path }}
+        {{- end }}
+        {{- with $env }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+        resources:
+          {{- toYaml .Values.swaggerUi.resources | nindent 10 }}
+        {{- with $volumeMounts }}
+        volumeMounts:
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with $volumes }}
+      volumes:
+      {{- toYaml . | nindent 6 }}
+      {{- end }}
+      {{- with $nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}
