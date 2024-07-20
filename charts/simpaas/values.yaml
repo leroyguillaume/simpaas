@@ -182,7 +182,7 @@ webapp:
     pathType: ImplementationSpecific
 
 ingress:
-  create: false
+  create: true
   className: ~
   domain: ~
   tlsSecretName: ~
@@ -219,3 +219,45 @@ smtp:
 
   livenessProbe: {}
   readinessProbe: {}
+
+swaggerUi:
+  enabled: true
+
+  replicas: 1
+
+  image:
+    repository: swaggerapi/swagger-ui
+    tag: v5.17.14
+  imagePullSecrets: []
+
+  podAnnotations: {}
+  podLabels: {}
+
+  podSecurityContext: {}
+  securityContext: {}
+
+  env: []
+
+  resoures: {}
+
+  volumeMounts: []
+  volumes: []
+
+  nodeSelector: {}
+
+  affinity: {}
+
+  tolerations: []
+
+  port: 8080
+
+  livenessProbe: {}
+  readinessProbe: {}
+
+  ingress:
+    enabled: true
+    domain: ~
+    fqdn: ~
+    tls: false
+    path: /swagger-ui
+    pathType: ImplementationSpecific

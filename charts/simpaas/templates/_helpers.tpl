@@ -110,3 +110,19 @@ app.kubernetes.io/name: {{ include "simpaas.smtp.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 app.kubernetes.io/component: smtp
 {{- end }}
+
+{{- define "simpaas.swaggerUi.labels" -}}
+{{ include "simpaas.labels" . }}
+app.kubernetes.io/version: {{ .Values.swaggerUi.image.tag }}
+{{ include "simpaas.swaggerUi.selectorLabels" . }}
+{{- end }}
+
+{{- define "simpaas.swaggerUi.name" -}}
+{{ printf "%s-swagger-ui" .Release.Name | trunc 63 | trimSuffix "-"  }}
+{{- end -}}
+
+{{- define "simpaas.swaggerUi.selectorLabels" -}}
+app.kubernetes.io/name: {{ include "simpaas.swaggerUi.name" . }}
+app.kubernetes.io/instance: {{ .Release.Name }}
+app.kubernetes.io/component: swagger-ui
+{{- end }}

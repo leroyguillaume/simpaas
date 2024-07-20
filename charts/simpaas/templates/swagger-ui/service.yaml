@@ -1,0 +1,16 @@
+{{- if .Values.swaggerUi.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "simpaas.swaggerUi.name" . }}
+  labels:
+    {{- include "simpaas.swaggerUi.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+  - port: {{ .Values.swaggerUi.port }}
+    targetPort: {{ .Values.swaggerUi.port }}
+    protocol: TCP
+  selector:
+    {{- include "simpaas.swaggerUi.selectorLabels" . | nindent 4 }}
+{{- end }}
