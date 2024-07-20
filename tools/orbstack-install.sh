@@ -11,13 +11,17 @@ if ! ./tools/gen-crds.sh; then
   find charts/simpaas/crds -name '*.yaml' -exec kubectl apply -f {} \;
 fi
 
+if [ -f .local/values.yaml ]; then
+  set_values="--set-values .local/values.yaml"
+fi
+
 helm upgrade \
   -n $ns \
   --create-namespace \
   --install \
-  --values config/local.yaml \
+  $set_values \
   simpaas \
-  charts/simpaas
+  charts/simpaas-orbstack
 kubectl -n $ns apply -f - <<EOF
 apiVersion: v1
 kind: Secret

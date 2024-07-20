@@ -256,6 +256,7 @@ swaggerUi:
 
   ingress:
     enabled: true
+    className: ~
     domain: ~
     fqdn: ~
     tls: false

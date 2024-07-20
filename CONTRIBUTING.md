@@ -28,15 +28,23 @@ cargo test
 
 You need to have a local Kubernetes cluster (as K3S, Minikube, kind...).
 
-To use SMTP locally, we recommand to use SMTP server as relay to GMail.
+You can install the [Helm chart](charts/simpaas).
+
+### Orbstack
+
+If you're using Orbstack, you can use orbstrack-install script directly. It will install the complete stack by using chart [simpaas-orbstack](charts/simpaas-orbstack).
+
+To use SMTP locally, you can use SMTP server as relay to GMail.
 
 You need to create [app password](https://support.google.com/accounts/answer/185833).
 
 ```bash
 export GMAIL_USER=your email
 export GMAIL_PASSWORD=your token
-./tools/install.sh
+./tools/orbstack-install.sh
 ```
+
+If you want to customize configuration, you can create a file `.local/values.yaml`.
 
 ### API
 
@@ -45,6 +53,8 @@ cargo run -- api
 ```
 
 ### Operator
+
+If you run the operator locally, it is strongly recommend to set number of replicas to `0` for operator.
 
 ```bash
 cargo run -- op
