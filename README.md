@@ -4,121 +4,47 @@ SimPaaS is a Platform as a Service (PaaS) based on [Kubernetes](https://kubernet
 
 ## Getting started
 
-### I don't have any Kubernetes cluster
-
-This command will:
-- install [k3s](https://docs.k3s.io/)
-- install [cert-manager](https://cert-manager.io/) and will configure it to use [letsencrypt](https://letsencrypt.org/)
-- install SMTP server
-- [OpenTelemetry Collector](https://opentelemetry.io/docs/collector/)
-- install SimPaaS
+This command installs a turnkey Kubernetes cluster with SimPaaS (monitoring, TLS, etc.). If you have already a Kubernetes cluster, you can [install the Helm chart](charts/simpaas/).
 
 ```bash
-curl -sfL https://raw.githubusercontent.com/leroyguillaume/simpaas/main/sh/install.sh | sudo bash
+curl -sfL https://raw.githubusercontent.com/leroyguillaume/simpaas/main/get-simpaas | bash -
 ```
 
-You can customize installation with environment variables. The script will source `.env` file if it exists.
+The script will source a `.env` file if it exists.
 
-#### Configuration examples
+Note that the script is idempotent.
 
-##### SimPaas for side projects
+All the environment variables are optional but we recommend to define [`SIMPAAS_DOMAIN`](#simpaas_domain) otherwise SimPaaS will not be accessible outside the cluster.
 
-This `.env` will install SimPaaS to deploy easily your side projects.
+#### `SIMPAAS_CERT_MANAGER_DISABLED`
 
-This configuration uses SMTP as GMail relay and you need to [generate a token](https://support.google.com/accounts/answer/185833).
+Disable [cert-manager](https://cert-manager.io/) installation. TLS will be disabled.
 
-```bash
-export SIMPAAS_DOMAIN=simpaas.example.com
-export SIMPAAS_SMTP_GMAIL_ENABLED=true
-export GMAIL_USER=john.doe@gmail.com
-export GMAIL_PASSWORD=mytoken
-```
+#### `SIMPAAS_CERT_MANAGER_EMAIL`
 
-#### Configuration reference
+Specify an email to receive alerts about certificates expiration.
 
-##### `GMAIL_PASSWORD`
+#### `SIMPAAS_CONFIG`
 
-*Required if `SIMPAAS_SMTP_GMAIL_ENABLED` is `true`.*
+Path to SimPaaS configuration file. You can find a complete example [here](charts/simpaas/values.yaml).
 
-GMail token.
+#### `SIMPAAS_DOMAIN`
 
-To create a token, see [Google documentation](https://support.google.com/accounts/answer/185833).
+Domain on which to expose SimPaaS. If it is not defined, it will not be exposed outside the cluster.
 
-##### `GMAIL_USER`
+#### `SIMPAAS_GMAIL_RELAY_ENABLED`
 
-*Required if `SIMPAAS_SMTP_GMAIL_ENABLED` is `true`.*
+Configure SimPaaS to use GMail as SMTP relay. If it is enabled, you need to define two environment variables:
+- `GMAIL_USER`: your email address
+- `GMAIL_PASSWORD`: a valid [app password](https://support.google.com/accounts/answer/185833)
 
-GMail address.
+#### `SIMPAAS_OTEL_DISABLED`
 
-##### `SIMPAAS_DOMAIN`
+Disable [OpenTelemetry Collector](https://opentelemetry.io/docs/collector/) installation.
 
-*Optional.*
+#### `SIMPAAS_VERSION`
 
-The domain on which expose SimPaaS (ex: `simpaas.example.com`).
-
-If it not specified, SimPaaS will be not exposed.
-
-##### `SIMPAAS_LETSENCRYPT_EMAIL`
-
-*Optional.*
-
-The email used to notify you about TLS certificate (by example, if a renewal failed).
-
-##### `SIMPAAS_SMTP_ALIASES`
-
-*Optional.*
-
-Semicolon-separated list of aliases to puth authentication data.
-
-##### `SIMPAAS_SMTP_HOST`
-
-*Required if `SIMPAAS_SMTP_GENERIC_RELAY_ENABLED` is `true`.*
-
-Host of SMTP server.
-
-##### `SIMPAAS_SMTP_PORT`
-
-*Optional. Default: `25`.*
-
-Port of SMTP server.
-
-##### `SIMPAAS_SMTP_PASSWORD`
-
-*Optional.*
-
-SMTP password.
-
-##### `SIMPAAS_SMTP_USER`
-
-*Optional.*
-
-SMTP user.
-
-##### `SIMPAAS_SMTP_GENERIC_RELAY_ENABLED`
-
-*Required if `SIMPAAS_SMTP_GMAIL_ENABLED` is `false`.*
-
-Configure SMTP as relay.
-
-##### `SIMPAAS_SMTP_GMAIL_ENABLED`
-
-*Required if `SIMPAAS_SMTP_GENERIC_RELAY_ENABLED` is `false`.*
-
-Configure SMTP as relay to GMail.
-
-**You need to define `GMAIL_USER` and `GMAIL_PASSWORD` environment variables.**
-
-##### `SIMPAAS_VERSION`
-
-*Optional.*
-
-Override SimPaaS version.
-
-If not defined, the latest stable version is used.
-
-### I'm already a Kubernetes boss
-
-You can find Helm chart documentation [here](charts/simpaas/).
+Specify SimPaaS version.
 
 ## Architecture
 

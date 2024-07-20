@@ -21,7 +21,9 @@ common:
 
   tolerations: []
 
-  otelCollectorUrl: http://simpaas-opentelemetry-collector:4317
+  otel:
+    enabled: false
+    collectorUrl: ~
 
   logFilter: ~
 
@@ -186,22 +188,8 @@ ingress:
   tlsSecretName: ~
   annotations: {}
 
-cert-manager:
-  clusterIssuers: []
-
-opentelemetry-collector:
-  enabled: false
-
-  mode: deployment
-
-  image:
-    repository: otel/opentelemetry-collector
-
-  command:
-    name: otelcol
-
 smtp:
-  enabled: false
+  enabled: true
 
   image:
     repository: ixdotai/smtp
@@ -231,6 +219,3 @@ smtp:
 
   livenessProbe: {}
   readinessProbe: {}
-
-traefik:
-  middlewares: []

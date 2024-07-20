@@ -8,9 +8,9 @@
 - name: LOG_FILTER
   value: {{ $logFilter }}
 {{- end }}
-{{- if (index .Values "opentelemetry-collector" "enabled") }}
+{{- if .Values.common.otel.enabled }}
 - name: OTEL_COLLECTOR_URL
-  value: {{ .Values.common.otelCollectorUrl }}
+  value: {{ default (printf "http://%s-opentelemetry-collector:4317" .Release.Name) .Values.common.otel.collectorUrl }}
 {{- end }}
 {{- end -}}
 
@@ -38,7 +38,7 @@ app.kubernetes.io/version: {{ include "simpaas.api.tag" . }}
 {{- end }}
 
 {{- define "simpaas.api.name" -}}
-{{ printf "%s-api" .Release.Name| trunc 63 | trimSuffix "-"  }}
+{{ printf "%s-api" .Release.Name | trunc 63 | trimSuffix "-"  }}
 {{- end -}}
 
 {{- define "simpaas.api.jwtSecretName" -}}

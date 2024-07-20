@@ -36,4 +36,4 @@ repos:
     name: crds
     language: script
     pass_filenames: false
-    entry: ./sh/gen-crds.sh
+    entry: ./tools/gen-crds.sh
