@@ -1,0 +1,31 @@
+simpaas:
+  common:
+    image:
+      tag: latest
+      pullPolicy: Always
+
+    logFilter: simpaas=debug,warn
+
+  ingress:
+    className: &ingressClassName simpaas-nginx
+    domain: simpaas.k8s.orb.local
+
+  smtp:
+    env:
+    - name: GMAIL_USER
+      valueFrom:
+        secretKeyRef:
+          name: simpaas-gmail
+          key: user
+    - name: GMAIL_PASSWORD
+      valueFrom:
+        secretKeyRef:
+          name: simpaas-gmail
+          key: password
+
+ingress-nginx:
+  enabled: true
+
+  controller:
+    ingressClassResource:
+      name: *ingressClassName
