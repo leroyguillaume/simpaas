@@ -3,9 +3,9 @@ entries:
   simpaas:
   - apiVersion: v2
     appVersion: 0.1.0
-    created: "2024-07-25T15:37:23.484090634Z"
+    created: "2024-07-25T19:47:24.044814052Z"
     description: A Helm chart for SimPaaS
-    digest: 4357d606abe220826710431a8219abe21082c5c3bf639be3ef0212c7f5621078
+    digest: b2e61230b73df491c676bac985b40d3e673d388c52eab967085bd7447e86210e
     name: simpaas
     type: application
     urls:
@@ -13,12 +13,35 @@ entries:
     version: 0.1.0
   simpaas-app:
   - apiVersion: v2
-    created: "2024-07-25T15:37:23.484304283Z"
+    created: "2024-07-25T19:47:24.045022021Z"
     description: A Helm chart for SimPaaS application
-    digest: a80708e4a9a33c5d7e5e22f005aa9edcfe3222888dacac96eda69f99026679f7
+    digest: e3141281619f9b7359d4409c84c8bb51a5c1999f5ebc2c8cb1a018a6a3c5d156
     name: simpaas-app
     type: application
     urls:
     - simpaas-app-0.1.0.tgz
     version: 0.1.0
-generated: "2024-07-25T15:37:23.483213463Z"
+  simpaas-stack:
+  - apiVersion: v2
+    appVersion: 0.1.0
+    created: "2024-07-25T19:47:24.052106689Z"
+    dependencies:
+    - name: simpaas
+      repository: file://../simpaas
+      version: ~0
+    - condition: ingress-nginx.enabled
+      name: ingress-nginx
+      repository: https://kubernetes.github.io/ingress-nginx
+      version: ~4
+    - condition: opentelemetry-collector.enabled
+      name: opentelemetry-collector
+      repository: https://open-telemetry.github.io/opentelemetry-helm-charts
+      version: ~0
+    description: A Helm chart for complete SimPaaS stack
+    digest: 43e6fec1990773cad1956b81fd1264c233467bdb988865b62e958497b35098de
+    name: simpaas-stack
+    type: application
+    urls:
+    - simpaas-stack-0.1.0.tgz
+    version: 0.1.0
+generated: "2024-07-25T19:47:24.043783446Z"
