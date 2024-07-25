@@ -3,9 +3,9 @@ entries:
   simpaas:
   - apiVersion: v2
     appVersion: 0.1.0
-    created: "2024-07-25T20:05:41.990871302Z"
+    created: "2024-07-25T20:15:47.233534532Z"
     description: A Helm chart for SimPaaS
-    digest: 90989ec60a3297242b9b62b09c01f0db14faf86d0a31e4842bece3161cc720f3
+    digest: 2753038633f6548bedc98f39db6afc7903e1fc36805705a478c8bdf6fef83141
     name: simpaas
     type: application
     urls:
@@ -13,9 +13,9 @@ entries:
     version: 0.1.0
   simpaas-app:
   - apiVersion: v2
-    created: "2024-07-25T20:05:41.991106934Z"
+    created: "2024-07-25T20:15:47.233795971Z"
     description: A Helm chart for SimPaaS application
-    digest: 1338a08ea37ac46354870f5af67f7dfe2c0a8c9dd68ceab82e3ef90aa14f7e6b
+    digest: 422b340a5b51b001dd68d1f2b76b032a7602e36d025cf32a959f48ebd4e2e6ad
     name: simpaas-app
     type: application
     urls:
@@ -24,7 +24,7 @@ entries:
   simpaas-stack:
   - apiVersion: v2
     appVersion: 0.1.0
-    created: "2024-07-25T20:05:41.998734087Z"
+    created: "2024-07-25T20:15:47.24010521Z"
     dependencies:
     - name: simpaas
       repository: file://../simpaas
@@ -44,4 +44,4 @@ entries:
     urls:
     - simpaas-stack-0.1.0.tgz
     version: 0.1.0
-generated: "2024-07-25T20:05:41.988961486Z"
+generated: "2024-07-25T20:15:47.23195963Z"
