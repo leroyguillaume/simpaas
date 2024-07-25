@@ -60,6 +60,8 @@ spec:
         env:
         - name: BIND_ADDR
           value: {{ printf "0.0.0.0:%d" (.Values.api.port | int) }}
+        - name: DOMAIN
+          value: {{ .Values.ingress.domain }}
         - name: JWT_SECRET
           valueFrom:
             secretKeyRef:

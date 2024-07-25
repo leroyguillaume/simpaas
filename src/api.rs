@@ -7,9 +7,14 @@ use aide::{
 };
 use axum::{
     extract::{MatchedPath, Path, Query, State},
-    http::{header, HeaderMap, Request, StatusCode},
+    http::{header, Request, StatusCode},
     response::{IntoResponse, Response},
     Extension, Json, Router,
+};
+use axum_extra::{
+    extract::{cookie::Cookie, CookieJar},
+    headers::{authorization::Bearer, Authorization},
+    TypedHeader,
 };
 use kube::api::ObjectMeta;
 use regex::Regex;
@@ -28,12 +33,15 @@ use crate::{
     jwt::JwtEncoder,
     kube::{AppFilter, KubeClient, FINALIZER},
     pwd::PasswordEncoder,
-    SignalListener, CARGO_PKG_NAME,
+    CookieArgs, SignalListener, CARGO_PKG_NAME,
 };
 
 pub const PATH_JOIN: &str = "/join";
 
+const COOKIE_NAME_JWT: &str = "simpaas-jwt";
+
 pub struct ApiContext<J: JwtEncoder, K: KubeClient, P: PasswordEncoder> {
+    pub cookie: CookieArgs,
     pub jwt_encoder: J,
     pub kube: K,
     pub pwd_encoder: P,
@@ -294,11 +302,12 @@ fn create_router<J: JwtEncoder + 'static, K: KubeClient + 'static, P: PasswordEn
         .layer(Extension(api))
 }
 
-#[instrument(skip(ctx, req), fields(auth.name = req.user))]
+#[instrument(skip(jar, ctx, req), fields(auth.name = req.user))]
 async fn authenticate_with_password<J: JwtEncoder, K: KubeClient, P: PasswordEncoder>(
+    jar: CookieJar,
     State(ctx): State<Arc<ApiContext<J, K, P>>>,
     Json(req): Json<UserPasswordCredentialsRequest>,
-) -> Result<(StatusCode, Json<JwtResponse>)> {
+) -> Result<(StatusCode, CookieJar, Json<JwtResponse>)> {
     debug!("authenticating user with password");
     let user = ctx.kube.get_user(&req.user).await?.ok_or_else(|| {
         debug!("user doesn't exist");
@@ -309,22 +318,20 @@ async fn authenticate_with_password<J: JwtEncoder, K: KubeClient, P: PasswordEnc
         Error::WrongCredentials
     })?;
     if ctx.pwd_encoder.verify(&req.password, password)? {
-        let jwt = ctx
-            .jwt_encoder
-            .encode(&req.user)
-            .map_err(Error::JwtEncoding)?;
-        Ok((StatusCode::OK, Json(JwtResponse { jwt })))
+        auth_response(&req.user, jar, &ctx)
     } else {
         Err(Error::WrongCredentials)
     }
 }
 
 async fn create_app<J: JwtEncoder, K: KubeClient, P: PasswordEncoder>(
-    headers: HeaderMap,
+    auth_header: Option<TypedHeader<Authorization<Bearer>>>,
+    jar: CookieJar,
     State(ctx): State<Arc<ApiContext<J, K, P>>>,
     Json(req): Json<CreateAppRequest>,
 ) -> Result<(StatusCode, Json<AppSpec>)> {
-    let (username, user) = authenticated_user(&headers, &ctx.jwt_encoder, &ctx.kube).await?;
+    let (username, user) =
+        authenticated_user(auth_header, &jar, &ctx.jwt_encoder, &ctx.kube).await?;
     let span = info_span!("create_app", app.name = req.name, auth.name = username);
     async {
         check_permission(&user, Action::CreateApp, &ctx.kube).await?;
@@ -364,11 +371,13 @@ async fn create_app<J: JwtEncoder, K: KubeClient, P: PasswordEncoder>(
 }
 
 async fn create_invitation<J: JwtEncoder, K: KubeClient, P: PasswordEncoder>(
-    headers: HeaderMap,
+    auth_header: Option<TypedHeader<Authorization<Bearer>>>,
+    jar: CookieJar,
     State(ctx): State<Arc<ApiContext<J, K, P>>>,
     Json(req): Json<SendInvitationRequest>,
 ) -> Result<(StatusCode, Json<InvitationSpec>)> {
-    let (username, user) = authenticated_user(&headers, &ctx.jwt_encoder, &ctx.kube).await?;
+    let (username, user) =
+        authenticated_user(auth_header, &jar, &ctx.jwt_encoder, &ctx.kube).await?;
     let token = Uuid::new_v4().to_string();
     let span = info_span!(
         "create_invitation",
@@ -400,11 +409,13 @@ async fn create_invitation<J: JwtEncoder, K: KubeClient, P: PasswordEncoder>(
 }
 
 async fn delete_app<J: JwtEncoder, K: KubeClient, P: PasswordEncoder>(
-    headers: HeaderMap,
+    auth_header: Option<TypedHeader<Authorization<Bearer>>>,
+    jar: CookieJar,
     State(ctx): State<Arc<ApiContext<J, K, P>>>,
     Path(name): Path<String>,
 ) -> Result<StatusCode> {
-    let (username, user) = authenticated_user(&headers, &ctx.jwt_encoder, &ctx.kube).await?;
+    let (username, user) =
+        authenticated_user(auth_header, &jar, &ctx.jwt_encoder, &ctx.kube).await?;
     let span = info_span!("delete_app", app.name = name, auth.name = username);
     async {
         let app = ctx
@@ -429,11 +440,13 @@ async fn doc(Extension(api): Extension<OpenApi>) -> Json<OpenApi> {
 }
 
 async fn get_app<J: JwtEncoder, K: KubeClient, P: PasswordEncoder>(
-    headers: HeaderMap,
+    auth_header: Option<TypedHeader<Authorization<Bearer>>>,
+    jar: CookieJar,
     State(ctx): State<Arc<ApiContext<J, K, P>>>,
     Path(name): Path<String>,
 ) -> Result<(StatusCode, Json<AppSpec>)> {
-    let (username, user) = authenticated_user(&headers, &ctx.jwt_encoder, &ctx.kube).await?;
+    let (username, user) =
+        authenticated_user(auth_header, &jar, &ctx.jwt_encoder, &ctx.kube).await?;
     let span = info_span!("get_app", app.name = name, auth.name = username);
     async {
         let app = ctx
@@ -457,12 +470,13 @@ async fn health<J: JwtEncoder, K: KubeClient, P: PasswordEncoder>(
     StatusCode::NO_CONTENT
 }
 
-#[instrument(skip(ctx, token, req), fields(invit.token = token))]
+#[instrument(skip(jar, ctx, token, req), fields(invit.token = token))]
 async fn join<J: JwtEncoder, K: KubeClient, P: PasswordEncoder>(
+    jar: CookieJar,
     State(ctx): State<Arc<ApiContext<J, K, P>>>,
     Path(token): Path<String>,
     Json(req): Json<UserPasswordCredentialsRequest>,
-) -> Result<(StatusCode, Json<JwtResponse>)> {
+) -> Result<(StatusCode, CookieJar, Json<JwtResponse>)> {
     req.validate()?;
     if ctx.kube.get_user(&req.user).await?.is_some() {
         let resp = ResourceAlreadyExistsItem {
@@ -492,19 +506,17 @@ async fn join<J: JwtEncoder, K: KubeClient, P: PasswordEncoder>(
     ctx.kube.patch_user(&req.user, &user).await?;
     info!(user.name = req.user, "user created");
     ctx.kube.delete_invitation(&token).await?;
-    let jwt = ctx
-        .jwt_encoder
-        .encode(&req.user)
-        .map_err(Error::JwtEncoding)?;
-    Ok((StatusCode::CREATED, Json(JwtResponse { jwt })))
+    auth_response(&req.user, jar, &ctx)
 }
 
 async fn list_apps<J: JwtEncoder, K: KubeClient, P: PasswordEncoder>(
-    headers: HeaderMap,
+    auth_header: Option<TypedHeader<Authorization<Bearer>>>,
+    jar: CookieJar,
     State(ctx): State<Arc<ApiContext<J, K, P>>>,
     Query(filter): Query<AppFilterQuery>,
 ) -> Result<(StatusCode, Json<Vec<AppSpec>>)> {
-    let (username, user) = authenticated_user(&headers, &ctx.jwt_encoder, &ctx.kube).await?;
+    let (username, user) =
+        authenticated_user(auth_header, &jar, &ctx.jwt_encoder, &ctx.kube).await?;
     let span = info_span!("list_apps", auth.name = username);
     async {
         let filter = filter.try_into()?;
@@ -522,12 +534,14 @@ async fn list_apps<J: JwtEncoder, K: KubeClient, P: PasswordEncoder>(
 }
 
 async fn update_app<J: JwtEncoder, K: KubeClient, P: PasswordEncoder>(
-    headers: HeaderMap,
+    auth_header: Option<TypedHeader<Authorization<Bearer>>>,
+    jar: CookieJar,
     Path(name): Path<String>,
     State(ctx): State<Arc<ApiContext<J, K, P>>>,
     Json(req): Json<UpdateAppRequest>,
 ) -> Result<(StatusCode, Json<AppSpec>)> {
-    let (username, user) = authenticated_user(&headers, &ctx.jwt_encoder, &ctx.kube).await?;
+    let (username, user) =
+        authenticated_user(auth_header, &jar, &ctx.jwt_encoder, &ctx.kube).await?;
     let span = info_span!("update_app", app.name = name, auth.name = username);
     async {
         let app = ctx
@@ -566,26 +580,27 @@ async fn update_app<J: JwtEncoder, K: KubeClient, P: PasswordEncoder>(
     .await
 }
 
-#[instrument(skip(headers, encoder, kube))]
+#[instrument(skip(auth_header, jar, encoder, kube))]
 async fn authenticated_user<J: JwtEncoder, K: KubeClient>(
-    headers: &HeaderMap,
+    auth_header: Option<TypedHeader<Authorization<Bearer>>>,
+    jar: &CookieJar,
     encoder: &J,
     kube: &K,
 ) -> Result<(String, User)> {
-    let authz = headers.get(header::AUTHORIZATION).ok_or_else(|| {
-        debug!("request doesn't contain header `{}`", header::AUTHORIZATION);
-        Error::Unauthorized
-    })?;
-    let authz = authz.to_str().map_err(|err| {
-        debug!("invalid header `{}`: {err}", header::AUTHORIZATION);
-        Error::Unauthorized
-    })?;
-    let regex = Regex::new(r"(?i)bearer (.*)$").unwrap();
-    let caps = regex.captures(authz).ok_or_else(|| {
-        debug!("header `{}` doesn't match pattern", header::AUTHORIZATION);
-        Error::Unauthorized
-    })?;
-    let jwt = caps.get(1).unwrap().as_str();
+    let jwt = auth_header
+        .as_ref()
+        .map(|header| header.0.token())
+        .or_else(|| {
+            debug!(
+                "request doesn't contain header `{}`, trying cookie",
+                header::AUTHORIZATION
+            );
+            jar.get(COOKIE_NAME_JWT).map(|cookie| cookie.value())
+        })
+        .ok_or_else(|| {
+            debug!("no cookie {COOKIE_NAME_JWT}");
+            Error::Unauthorized
+        })?;
     let name = encoder.decode(jwt).map_err(Error::JwtDecoding)?;
     let user = kube.get_user(&name).await?.ok_or_else(|| {
         debug!("user doesn't exist");
@@ -620,6 +635,33 @@ async fn ensure_domains_are_free<K: KubeClient>(name: &str, svcs: &[Service], ku
     }
 }
 
+fn auth_response<J: JwtEncoder, K: KubeClient, P: PasswordEncoder>(
+    username: &str,
+    jar: CookieJar,
+    ctx: &ApiContext<J, K, P>,
+) -> Result<(StatusCode, CookieJar, Json<JwtResponse>)> {
+    let jwt = ctx
+        .jwt_encoder
+        .encode(username)
+        .map_err(Error::JwtEncoding)?;
+    let cookie = Cookie::build((COOKIE_NAME_JWT, jwt.token.clone()))
+        .domain(ctx.cookie.domain.clone())
+        .path("/")
+        .http_only(!ctx.cookie.http_only_disabled)
+        .secure(!ctx.cookie.secure_disabled)
+        .expires(jwt.expiration)
+        .max_age(jwt.validity);
+    Ok((
+        StatusCode::OK,
+        jar.add(cookie),
+        Json(JwtResponse { jwt: jwt.token }),
+    ))
+}
+
+fn default_filter() -> String {
+    r".*".into()
+}
+
 impl TryFrom<AppFilterQuery> for AppFilter {
     type Error = Error;
 
@@ -641,8 +683,4 @@ impl TryFrom<AppFilterQuery> for AppFilter {
             Err(Error::Validation(errs))
         }
     }
-}
-
-fn default_filter() -> String {
-    r".*".into()
 }
