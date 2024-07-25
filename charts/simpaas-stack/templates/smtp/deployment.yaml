@@ -4,7 +4,7 @@
 {{- $imagePullSecrets := concat .Values.common.imagePullSecrets .Values.smtp.imagePullSecrets -}}
 {{- $podSecurityContext := merge .Values.common.podSecurityContext .Values.smtp.podSecurityContext -}}
 {{- $securityContext := merge .Values.common.securityContext .Values.smtp.securityContext -}}
-{{- $env := concat .Values.common.env .Values.smtp.env -}}
+{{- $env := concat .Values.common.env .Values.smtp.env .Values.smtp.extraEnv -}}
 {{- $volumeMounts := concat .Values.common.volumeMounts .Values.smtp.volumeMounts -}}
 {{- $volumes := concat .Values.common.volumes .Values.smtp.volumes -}}
 {{- $nodeSelector := merge .Values.common.nodeSelector .Values.smtp.nodeSelector -}}
@@ -13,14 +13,14 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "simpaas.smtp.name" . }}
+  name: {{ include "simpaas-stack.smtp.name" . }}
   labels:
-    {{- include "simpaas.smtp.labels" . | nindent 4 }}
+    {{- include "simpaas-stack.smtp.labels" . | nindent 4 }}
 spec:
   replicas: {{ .Values.smtp.replicas }}
   selector:
     matchLabels:
-      {{- include "simpaas.smtp.selectorLabels" . | nindent 6 }}
+      {{- include "simpaas-stack.smtp.selectorLabels" . | nindent 6 }}
   template:
     metadata:
       {{- with $podAnnotations }}
@@ -28,7 +28,7 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       labels:
-        {{- include "simpaas.smtp.labels" . | nindent 8 }}
+        {{- include "simpaas-stack.smtp.labels" . | nindent 8 }}
         {{- with $podLabels }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
@@ -37,7 +37,6 @@ spec:
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      serviceAccountName: {{ include "simpaas.serviceAccountName" . }}
       securityContext:
         {{- toYaml $podSecurityContext | nindent 8 }}
       containers:
@@ -45,7 +44,7 @@ spec:
         securityContext:
           {{- toYaml $securityContext | nindent 12 }}
         image: {{ printf "%s:%s" .Values.smtp.image.repository .Values.smtp.image.tag }}
-        imagePullPolicy: {{ default .Values.common.image.pullPolicy .Values.smtp.image.pullPolicy }}
+        imagePullPolicy: {{ default .Values.common.imagePullPolicy .Values.smtp.image.pullPolicy }}
         ports:
         - name: smtp
           containerPort: {{ .Values.smtp.port }}

@@ -3,7 +3,7 @@
 {{- $imagePullSecrets := concat .Values.common.imagePullSecrets .Values.api.imagePullSecrets -}}
 {{- $podSecurityContext := merge .Values.common.podSecurityContext .Values.api.podSecurityContext -}}
 {{- $securityContext := merge .Values.common.securityContext .Values.api.securityContext -}}
-{{- $env := concat .Values.common.env .Values.api.env -}}
+{{- $env := concat .Values.common.env .Values.api.env .Values.api.extraEnv -}}
 {{- $volumeMounts := concat .Values.common.volumeMounts .Values.api.volumeMounts -}}
 {{- $volumes := concat .Values.common.volumes .Values.api.volumes -}}
 {{- $nodeSelector := merge .Values.common.nodeSelector .Values.api.nodeSelector -}}
@@ -61,7 +61,7 @@ spec:
         - name: BIND_ADDR
           value: {{ printf "0.0.0.0:%d" (.Values.api.port | int) }}
         - name: DOMAIN
-          value: {{ .Values.ingress.domain }}
+          value: {{ include "simpaas.fqdn" (dict "Ingress" .Values.api.ingress "Values" .Values) }}
         - name: JWT_SECRET
           valueFrom:
             secretKeyRef:
@@ -69,7 +69,7 @@ spec:
               key: {{ .Values.api.jwtSecret.key }}
         - name: ROOT_PATH
           value: {{ .Values.api.ingress.path }}
-        {{- include "simpaas.env" (dict "Release" .Release "Service" .Values.api "Values" .Values) | nindent 8 }}
+        {{- include "simpaas.observabilityEnv" (dict "Release" .Release "Service" .Values.api "Values" .Values) | nindent 8 }}
         {{- with $env }}
         {{- toYaml . | nindent 8 }}
         {{- end }}

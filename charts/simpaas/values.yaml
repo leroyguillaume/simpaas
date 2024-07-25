@@ -61,6 +61,7 @@ api:
     runAsUser: 1000
 
   env: []
+  extraEnv: []
 
   resoures: {}
 
@@ -138,6 +139,7 @@ op:
     runAsUser: 1000
 
   env: []
+  extraEnv: []
 
   resoures: {}
 
@@ -160,18 +162,41 @@ op:
   smtp:
     host: ~
     port: 25
-    tls: false
-    implicitTls: false
-    authEnabled: false
-    credentialsSecret:
-      name: ~
-      userKey: user
-      passwordKey: password
 
   webappUrl: ~
 
 webapp:
-  port: 3000
+  replicas: 1
+
+  image:
+    repository: nginx
+    tag: 1.27
+  imagePullSecrets: []
+
+  podAnnotations: {}
+  podLabels: {}
+
+  podSecurityContext: {}
+  securityContext: {}
+
+  env: []
+  extraEnv: []
+
+  resoures: {}
+
+  volumeMounts: []
+  volumes: []
+
+  nodeSelector: {}
+
+  affinity: {}
+
+  tolerations: []
+
+  port: 80
+
+  livenessProbe: {}
+  readinessProbe: {}
 
   ingress:
     enabled: true
@@ -187,78 +212,4 @@ ingress:
   domain: ~
   tlsSecretName: ~
   annotations: {}
-
-smtp:
-  enabled: true
-
-  image:
-    repository: ixdotai/smtp
-    tag: v0.5.2
-  imagePullSecrets: []
-
-  podAnnotations: {}
-  podLabels: {}
-
-  podSecurityContext: {}
-  securityContext: {}
-
-  env: []
-
-  resoures: {}
-
-  volumeMounts: []
-  volumes: []
-
-  nodeSelector: {}
-
-  affinity: {}
-
-  tolerations: []
-
-  port: 25
-
-  livenessProbe: {}
-  readinessProbe: {}
-
-swaggerUi:
-  enabled: true
-
-  replicas: 1
-
-  image:
-    repository: swaggerapi/swagger-ui
-    tag: v5.17.14
-  imagePullSecrets: []
-
-  podAnnotations: {}
-  podLabels: {}
-
-  podSecurityContext: {}
-  securityContext: {}
-
-  env: []
-
-  resoures: {}
-
-  volumeMounts: []
-  volumes: []
-
-  nodeSelector: {}
-
-  affinity: {}
-
-  tolerations: []
-
-  port: 8080
-
-  livenessProbe: {}
-  readinessProbe: {}
-
-  ingress:
-    enabled: true
-    className: ~
-    domain: ~
-    fqdn: ~
-    tls: false
-    path: /swagger-ui
-    pathType: ImplementationSpecific
+  additionalRules: []

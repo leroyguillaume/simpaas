@@ -4,7 +4,7 @@
 {{- $imagePullSecrets := concat .Values.common.imagePullSecrets .Values.swaggerUi.imagePullSecrets -}}
 {{- $podSecurityContext := merge .Values.common.podSecurityContext .Values.swaggerUi.podSecurityContext -}}
 {{- $securityContext := merge .Values.common.securityContext .Values.swaggerUi.securityContext -}}
-{{- $env := concat .Values.common.env .Values.swaggerUi.env -}}
+{{- $env := concat .Values.common.env .Values.swaggerUi.env .Values.swaggerUi.extraEnv -}}
 {{- $volumeMounts := concat .Values.common.volumeMounts .Values.swaggerUi.volumeMounts -}}
 {{- $volumes := concat .Values.common.volumes .Values.swaggerUi.volumes -}}
 {{- $nodeSelector := merge .Values.common.nodeSelector .Values.swaggerUi.nodeSelector -}}
@@ -13,14 +13,14 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "simpaas.swaggerUi.name" . }}
+  name: {{ include "simpaas-stack.swaggerUi.name" . }}
   labels:
-    {{- include "simpaas.swaggerUi.labels" . | nindent 4 }}
+    {{- include "simpaas-stack.swaggerUi.labels" . | nindent 4 }}
 spec:
   replicas: {{ .Values.swaggerUi.replicas }}
   selector:
     matchLabels:
-      {{- include "simpaas.swaggerUi.selectorLabels" . | nindent 6 }}
+      {{- include "simpaas-stack.swaggerUi.selectorLabels" . | nindent 6 }}
   template:
     metadata:
       {{- with $podAnnotations }}
@@ -28,7 +28,7 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       labels:
-        {{- include "simpaas.swaggerUi.labels" . | nindent 8 }}
+        {{- include "simpaas-stack.swaggerUi.labels" . | nindent 8 }}
         {{- with $podLabels }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
@@ -37,7 +37,6 @@ spec:
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      serviceAccountName: {{ include "simpaas.serviceAccountName" . }}
       securityContext:
         {{- toYaml $podSecurityContext | nindent 8 }}
       containers:
@@ -45,7 +44,7 @@ spec:
         securityContext:
           {{- toYaml $securityContext | nindent 12 }}
         image: {{ printf "%s:%s" .Values.swaggerUi.image.repository .Values.swaggerUi.image.tag }}
-        imagePullPolicy: {{ default .Values.common.image.pullPolicy .Values.swaggerUi.image.pullPolicy }}
+        imagePullPolicy: {{ default .Values.common.imagePullPolicy .Values.swaggerUi.image.pullPolicy }}
         ports:
         - name: http
           containerPort: {{ .Values.swaggerUi.port }}
@@ -62,7 +61,7 @@ spec:
         - name: BASE_URL
           value: {{ .Values.swaggerUi.ingress.path }}
         {{- if and .Values.ingress.create .Values.api.ingress.enabled }}
-        {{- $apiFqdn := include "simpaas.fqdn" (dict "Ingress" .Values.api.ingress "Values" .Values) }}
+        {{- $apiFqdn := include "simpaas-stack.fqdn" (dict "Ingress" .Values.api.ingress "Values" .Values) }}
         {{- $protocol := .Values.api.ingress.tls | ternary "https" "http" }}
         - name: SWAGGER_JSON_URL
           value: {{ printf "%s://%s%s/_doc" $protocol $apiFqdn .Values.api.ingress.path }}

@@ -1,0 +1,138 @@
+common:
+  imagePullPolicy: IfNotPresent
+  imagePullSecrets: []
+
+  podAnnotations: {}
+  podLabels: {}
+
+  podSecurityContext: {}
+  securityContext: {}
+
+  env: []
+
+  volumeMounts: []
+  volumes: []
+
+  nodeSelector: {}
+
+  affinity: {}
+
+  tolerations: []
+
+smtp:
+  enabled: true
+
+  image:
+    repository: ixdotai/smtp
+    tag: v0.5.2
+  imagePullSecrets: []
+
+  podAnnotations: {}
+  podLabels: {}
+
+  podSecurityContext: {}
+  securityContext: {}
+
+  env: []
+  extraEnv: []
+
+  resoures: {}
+
+  volumeMounts: []
+  volumes: []
+
+  nodeSelector: {}
+
+  affinity: {}
+
+  tolerations: []
+
+  port: &smtpPort 25
+
+  livenessProbe: {}
+  readinessProbe: {}
+
+swaggerUi:
+  enabled: &swaggerUiEnabled false
+
+  replicas: 1
+
+  image:
+    repository: swaggerapi/swagger-ui
+    tag: v5.17.14
+  imagePullSecrets: []
+
+  podAnnotations: {}
+  podLabels: {}
+
+  podSecurityContext: {}
+  securityContext: {}
+
+  env:
+  - name: BASE_URL
+    value: &swaggerUiPath /swagger-ui
+  extraEnv: []
+
+  resoures: {}
+
+  volumeMounts: []
+  volumes: []
+
+  nodeSelector: {}
+
+  affinity: {}
+
+  tolerations: []
+
+  port: &swaggerUiPort 8080
+
+  livenessProbe: {}
+  readinessProbe: {}
+
+ingress-nginx:
+  enabled: true
+
+  controller:
+    ingressClassResource:
+      name: &ingressClassName simpaas-nginx
+
+opentelemetry-collector:
+  enabled: true
+
+  mode: deployment
+
+  image:
+    repository: otel/opentelemetry-collector
+
+  command:
+    name: otelcol
+
+simpaas:
+  api:
+    ingress:
+      tls: true
+
+  op:
+    smtp:
+      port: *smtpPort
+
+  webapp:
+    ingress:
+      tls: true
+
+  swaggerUi:
+    ingress:
+      tls: true
+
+  ingress:
+    className: *ingressClassName
+    annotations:
+      acme.cert-manager.io/http01-edit-in-place: "true"
+    additionalRules:
+    - enabled: *swaggerUiEnabled
+      path: *swaggerUiPath
+      pathType: ImplementationSpecific
+      tls: true
+      service:
+        name: swagger-ui
+        port: *swaggerUiPort
