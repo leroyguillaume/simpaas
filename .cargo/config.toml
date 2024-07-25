@@ -1,4 +1,6 @@
 [env]
+COOKIE_HTTP_ONLY_DISABLED = "true"
+COOKIE_SECURE_DISABLED = "true"
 JWT_SECRET = "changeit"
 LOG_FILTER = "simpaas=debug,warn"
 SMTP_HOST = "simpaas-smtp.simpaas.svc.cluster.local"

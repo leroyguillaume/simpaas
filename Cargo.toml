@@ -1,7 +1,8 @@
 [dependencies]
-aide = {version = "0", features = ["axum"]}
+aide = {version = "0", features = ["axum", "axum-extra-cookie", "axum-headers"]}
 anyhow = "1"
 axum = "0"
+axum-extra = {version = "0", features = ["cookie", "typed-header"]}
 bcrypt = "0"
 clap = {version = "4", features = ["derive", "env"]}
 futures = "0"
@@ -25,6 +26,7 @@ serde_yaml = "0"
 sha2 = "0"
 tempdir = "0"
 thiserror = "1"
+time = "0"
 tokio = {version = "1", features = ["full"]}
 tower-http = {version = "0", features = ["trace"]}
 tracing = "0"

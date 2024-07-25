@@ -1,11 +1,12 @@
-use std::time::{Duration, SystemTime, SystemTimeError};
+use std::num::TryFromIntError;
 
 use hmac::{Hmac, Mac};
 use jwt::{AlgorithmType, Claims, Header, RegisteredClaims, SignWithKey, Token, VerifyWithKey};
 use sha2::Sha384;
+use time::{Duration, OffsetDateTime};
 use tracing::{debug, instrument};
 
-use super::{JwtEncoder, Result};
+use super::{Jwt, JwtEncoder, Result};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -18,10 +19,10 @@ pub enum Error {
     #[error("jwt is invalid")]
     InvalidJwt,
     #[error("time error: {0}")]
-    SystemTime(
+    Time(
         #[from]
         #[source]
-        SystemTimeError,
+        TryFromIntError,
     ),
 }
 
@@ -41,7 +42,7 @@ pub struct DefaultJwtEncoderArgs {
         long_help = "Number of seconds during which a JWT is valid",
         default_value_t = 24 * 60 * 60,
     )]
-    pub validity: u64,
+    pub validity: u32,
 }
 
 impl Default for DefaultJwtEncoderArgs {
@@ -64,7 +65,7 @@ impl DefaultJwtEncoder {
         let key = Hmac::new_from_slice(args.secret.as_bytes())?;
         Ok(Self {
             key,
-            validity: Duration::from_secs(args.validity),
+            validity: Duration::seconds(args.validity.into()),
         })
     }
 }
@@ -74,14 +75,12 @@ impl JwtEncoder for DefaultJwtEncoder {
     fn decode(&self, jwt: &str) -> Result<String> {
         debug!("verifying jwt");
         let claims: Claims = jwt.verify_with_key(&self.key)?;
-        let now = SystemTime::now()
-            .duration_since(SystemTime::UNIX_EPOCH)?
-            .as_secs();
-        let expiration = claims.registered.expiration.ok_or_else(|| {
+        let now_ts: u64 = OffsetDateTime::now_utc().unix_timestamp().try_into()?;
+        let expiration_ts = claims.registered.expiration.ok_or_else(|| {
             debug!("jwt doesn't contain expiration");
             Error::InvalidJwt
         })?;
-        if expiration < now {
+        if expiration_ts < now_ts {
             debug!("jwt is expired");
             return Err(Error::InvalidJwt.into());
         }
@@ -93,24 +92,28 @@ impl JwtEncoder for DefaultJwtEncoder {
     }
 
     #[instrument("encode_jwt", skip(self, name), fields(user.name = name))]
-    fn encode(&self, name: &str) -> Result<String> {
+    fn encode(&self, name: &str) -> Result<Jwt> {
         debug!("encoding jwt");
-        let expiration = SystemTime::now() + self.validity;
-        let expiration = expiration.duration_since(SystemTime::UNIX_EPOCH)?.as_secs();
+        let expiration = OffsetDateTime::now_utc() + self.validity;
+        let expiration_ts: u64 = expiration.unix_timestamp().try_into()?;
         let header = Header {
             algorithm: AlgorithmType::Hs384,
             ..Default::default()
         };
         let claims = Claims {
             registered: RegisteredClaims {
-                expiration: Some(expiration),
+                expiration: Some(expiration_ts),
                 subject: Some(name.into()),
                 ..Default::default()
             },
             ..Default::default()
         };
-        let jwt = Token::new(header, claims).sign_with_key(&self.key)?;
-        Ok(jwt.as_str().to_string())
+        let token = Token::new(header, claims).sign_with_key(&self.key)?;
+        Ok(Jwt {
+            expiration,
+            token: token.as_str().to_string(),
+            validity: self.validity,
+        })
     }
 }
 
@@ -126,8 +129,8 @@ impl From<jwt::Error> for super::Error {
     }
 }
 
-impl From<SystemTimeError> for super::Error {
-    fn from(err: SystemTimeError) -> Self {
-        Error::SystemTime(err).into()
+impl From<TryFromIntError> for super::Error {
+    fn from(err: TryFromIntError) -> Self {
+        Error::Time(err).into()
     }
 }

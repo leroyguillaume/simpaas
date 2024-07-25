@@ -56,6 +56,7 @@ async fn main() -> anyhow::Result<()> {
         Command::Api(args) => {
             let kube = ::kube::Client::try_default().await?;
             let ctx = ApiContext {
+                cookie: args.cookie,
                 jwt_encoder: DefaultJwtEncoder::new(args.jwt)?,
                 kube: ApiKubeClient::new(kube),
                 pwd_encoder: BcryptPasswordEncoder,
@@ -149,6 +150,8 @@ struct ApiArgs {
     )]
     bind_addr: SocketAddr,
     #[command(flatten)]
+    cookie: CookieArgs,
+    #[command(flatten)]
     jwt: DefaultJwtEncoderArgs,
     #[arg(long, env, default_value = "/", long_help = "Root endpoints path")]
     root_path: String,
@@ -158,8 +161,42 @@ impl Default for ApiArgs {
     fn default() -> Self {
         Self {
             bind_addr: SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(0, 0, 0, 0), 8080)),
+            cookie: Default::default(),
             jwt: DefaultJwtEncoderArgs::default(),
             root_path: "/".into(),
+        }
+    }
+}
+
+#[derive(clap::Args, Clone, Debug, Eq, PartialEq)]
+struct CookieArgs {
+    #[arg(
+        long,
+        env,
+        default_value = "127.0.0.1",
+        long_help = "Domain used to create cookies"
+    )]
+    domain: String,
+    #[arg(
+        long = "cookie-http-only-disabled",
+        env = "COOKIE_HTTP_ONLY_DISABLED",
+        long_help = "Disable http-only on cookies"
+    )]
+    http_only_disabled: bool,
+    #[arg(
+        long = "cookie-secure-disabled",
+        env = "COOKIE_SECURE_DISABLED",
+        long_help = "Disable secure on cookies"
+    )]
+    secure_disabled: bool,
+}
+
+impl Default for CookieArgs {
+    fn default() -> Self {
+        Self {
+            domain: "127.0.0.1".into(),
+            http_only_disabled: false,
+            secure_disabled: false,
         }
     }
 }
