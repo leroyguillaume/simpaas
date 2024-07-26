@@ -318,7 +318,7 @@ async fn authenticate_with_password<J: JwtEncoder, K: KubeClient, P: PasswordEnc
         Error::WrongCredentials
     })?;
     if ctx.pwd_encoder.verify(&req.password, password)? {
-        auth_response(&req.user, jar, &ctx)
+        auth_response(&req.user, &user.spec, jar, &ctx)
     } else {
         Err(Error::WrongCredentials)
     }
@@ -506,7 +506,7 @@ async fn join<J: JwtEncoder, K: KubeClient, P: PasswordEncoder>(
     ctx.kube.patch_user(&req.user, &user).await?;
     info!(user.name = req.user, "user created");
     ctx.kube.delete_invitation(&token).await?;
-    auth_response(&req.user, jar, &ctx)
+    auth_response(&req.user, &user.spec, jar, &ctx)
 }
 
 async fn list_apps<J: JwtEncoder, K: KubeClient, P: PasswordEncoder>(
@@ -637,12 +637,13 @@ async fn ensure_domains_are_free<K: KubeClient>(name: &str, svcs: &[Service], ku
 
 fn auth_response<J: JwtEncoder, K: KubeClient, P: PasswordEncoder>(
     username: &str,
+    user: &UserSpec,
     jar: CookieJar,
     ctx: &ApiContext<J, K, P>,
 ) -> Result<(StatusCode, CookieJar, Json<JwtResponse>)> {
     let jwt = ctx
         .jwt_encoder
-        .encode(username)
+        .encode(username, user)
         .map_err(Error::JwtEncoding)?;
     let cookie = Cookie::build((COOKIE_NAME_JWT, jwt.token.clone()))
         .domain(ctx.cookie.domain.clone())

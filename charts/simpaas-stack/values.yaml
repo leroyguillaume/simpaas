@@ -89,12 +89,72 @@ swaggerUi:
   livenessProbe: {}
   readinessProbe: {}
 
+grafana:
+  enabled: &grafanaEnabled true
+
+  extraInitContainers:
+  - name: openssl
+    image: alpine/openssl
+    command: [/bin/sh]
+    args:
+    - -c
+    - openssl pkey -pubout -in /opt/simpaas/etc/privkey.pem -out /etc/simpaas/pubkey.pem
+    volumeMounts:
+    - name: jwt-privkey
+      mountPath: /opt/simpaas/etc
+      readOnly: true
+    - name: jwt-pubkey
+      mountPath: /etc/simpaas/
+      readOnly: false
+
+  extraVolumeMounts:
+  - name: jwt-pubkey
+    mountPath: /etc/simpaas
+    readOnly: true
+
+  extraVolumes:
+  - name: jwt-pubkey
+    emptyDir: {}
+
+  extraContainerVolumes:
+  - name: jwt-privkey
+    secret:
+      secretName: &jwtSecretName simpaas-jwt
+
+  service:
+    port: &grafanaPort 80
+
+  grafana.ini:
+    auth.jwt:
+      enabled: true
+      header_name: X-SimPaaS-JWT
+      username_claim: sub
+      email_claim: email
+      auto_sign_up: true
+      key_file: /etc/simpaas/pubkey.pem
+
+    security:
+      cookie_samesite: none
+
+    server:
+      root_url: "%(protocol)s://%(domain)s:%(http_port)s/grafana/"
+      serve_from_sub_path: true
+
 ingress-nginx:
   enabled: true
 
   controller:
     ingressClassResource:
       name: &ingressClassName simpaas-nginx
+
+    allowSnippetAnnotations: true
+
+    config:
+      http-snippet: |
+        map $http_cookie $jwt {
+          default "";
+          "~*simpaas-jwt=([^;]+)(?:;|$)" $1;
+        }
 
 opentelemetry-collector:
   enabled: true
@@ -112,6 +172,9 @@ simpaas:
     ingress:
       tls: true
 
+    jwtSecret:
+      name: *jwtSecretName
+
   op:
     smtp:
       port: *smtpPort
@@ -128,11 +191,20 @@ simpaas:
     className: *ingressClassName
     annotations:
       acme.cert-manager.io/http01-edit-in-place: "true"
+      nginx.ingress.kubernetes.io/configuration-snippet: |
+        proxy_set_header X-SimPaaS-JWT $jwt;
     additionalRules:
-    - enabled: *swaggerUiEnabled
-      path: *swaggerUiPath
-      pathType: ImplementationSpecific
-      tls: true
-      service:
-        name: swagger-ui
-        port: *swaggerUiPort
+      grafana:
+        enabled: *grafanaEnabled
+        path: /grafana
+        pathType: ImplementationSpecific
+        tls: true
+        servicePort: *grafanaPort
+        prefixServiceNameByReleaseName: true
+      swagger-ui:
+        enabled: *swaggerUiEnabled
+        path: *swaggerUiPath
+        pathType: ImplementationSpecific
+        tls: true
+        servicePort: *swaggerUiPort
+        prefixServiceNameByReleaseName: true

@@ -17,16 +17,16 @@
 {{- end -}}
 {{- end -}}
 {{- end -}}
-{{- range $rule := .Values.ingress.additionalRules -}}
+{{- range $serviceName, $rule := .Values.ingress.additionalRules -}}
 {{- if $rule.enabled -}}
-{{- $ingress := dict "Ingress" $rule "Service" (dict "Name" $rule.service.name "Port" $rule.service.port) -}}
+{{- $ingress := dict "Ingress" $rule "Service" (dict "Name" (ternary (printf "%s-%s" $.Release.Name $serviceName) $serviceName $rule.prefixServiceNameByReleaseName) "Port" $rule.servicePort) -}}
 {{- $ingresses := get $fqdns $.Values.ingress.domain -}}
 {{- if not $ingresses -}}
 {{- $ingresses = list -}}
 {{- end -}}
-{{- $fqdns = set $fqdns $rule.host (append $ingresses $ingress) -}}
+{{- $fqdns = set $fqdns $.Values.ingress.domain (append $ingresses $ingress) -}}
 {{- if $rule.tls -}}
-{{- $tlsHosts = append $tlsHosts $rule.host -}}
+{{- $tlsHosts = append $tlsHosts $.Values.ingress.domain -}}
 {{- end -}}
 {{- end -}}
 {{- end -}}

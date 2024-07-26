@@ -105,6 +105,7 @@ ensure_installed helm https://raw.githubusercontent.com/helm/helm/main/scripts/g
 
 add_helm_repo $repo_jetstack https://charts.jetstack.io
 add_helm_repo $repo_simpaas https://leroyguillaume.github.io/simpaas
+echo "updating helm repositories"
 run helm repo update
 
 install_chart $ns_cert_manager cert-manager $repo_jetstack/cert-manager \
@@ -131,6 +132,7 @@ install_chart $ns_simpaas simpaas $repo_simpaas/simpaas-stack \
   --set simpaas.ingress.create=$ingress_create \
   --set "simpaas.ingress.domain=$SIMPAAS_DOMAIN" \
   --set-json "simpaas.ingress.annotations={\"cert-manager.io/cluster-issuer\":\"$issuer\"}" \
+  --set-json "grafana={\"grafana.ini\":{\"server\":{\"domain\":\"$SIMPAAS_DOMAIN\"}}}" \
   "${set_smtp_env[@]}" \
   "${set_values[@]}"
 

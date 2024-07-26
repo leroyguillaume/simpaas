@@ -1,5 +1,7 @@
 use time::{Duration, OffsetDateTime};
 
+use crate::domain::UserSpec;
+
 pub mod default;
 
 pub type Result<T = ()> = std::result::Result<T, Error>;
@@ -17,5 +19,5 @@ pub struct Jwt {
 pub trait JwtEncoder: Send + Sync {
     fn decode(&self, jwt: &str) -> Result<String>;
 
-    fn encode(&self, name: &str) -> Result<Jwt>;
+    fn encode(&self, name: &str, user: &UserSpec) -> Result<Jwt>;
 }

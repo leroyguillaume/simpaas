@@ -2,11 +2,14 @@ dependencies:
 - name: simpaas
   repository: file://../simpaas
   version: 0.1.0
+- name: grafana
+  repository: https://grafana.github.io/helm-charts
+  version: 8.3.6
 - name: ingress-nginx
   repository: https://kubernetes.github.io/ingress-nginx
   version: 4.11.1
 - name: opentelemetry-collector
   repository: https://open-telemetry.github.io/opentelemetry-helm-charts
-  version: 0.99.0
-digest: sha256:5548af5ee79ddddc0cd0262b6b5d5941a40db82a51e70e0c4967c6a1622d4219
-generated: "2024-07-25T17:35:47.227721+02:00"
+  version: 0.100.0
+digest: sha256:43e2a816099d34da958d6fa4b3f91095d8eeeaba8f785d09f8243414b617ff7b
+generated: "2024-07-26T17:02:12.566436+02:00"
