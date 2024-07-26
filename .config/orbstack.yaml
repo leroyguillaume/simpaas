@@ -11,6 +11,18 @@ smtp:
         name: simpaas-gmail
         key: password
 
+swaggerUi:
+  enabled: true
+
+  extraEnv:
+  - name: SWAGGER_JSON_URL
+    value: https://simpaas.k8s.orb.local/api/_doc
+
+grafana:
+  grafana.ini:
+    server:
+      domain: &domain simpaas.k8s.orb.local
+
 simpaas:
   common:
     image:
@@ -20,4 +32,7 @@ simpaas:
     logFilter: simpaas=debug,warn
 
   ingress:
-    domain: simpaas.k8s.orb.local
+    domain: *domain
+    additionalRules:
+      swagger-ui:
+        enabled: true

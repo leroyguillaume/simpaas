@@ -1,6 +1,6 @@
 common:
   image:
-    tag: ~
+    tag: ""
     pullPolicy: IfNotPresent
   imagePullSecrets: []
 
@@ -23,13 +23,13 @@ common:
 
   otel:
     enabled: false
-    collectorUrl: ~
+    collectorUrl: ""
 
-  logFilter: ~
+  logFilter: ""
 
 serviceAccount:
   create: true
-  name: ~
+  name: ""
   automount: true
 
 rbac:
@@ -44,7 +44,7 @@ api:
 
   image:
     repository: gleroy/simpaas-api
-    tag: ~
+    tag: ""
   imagePullSecrets: []
 
   podAnnotations: {}
@@ -87,15 +87,15 @@ api:
 
   jwtSecret:
     create: true
-    name: ~
-    key: secret
+    name: ""
+    key: privkey.pem
 
-  logFilter: ~
+  logFilter: ""
 
   ingress:
     enabled: true
-    domain: ~
-    fqdn: ~
+    domain: ""
+    fqdn: ""
     tls: false
     path: /api
     pathType: ImplementationSpecific
@@ -114,7 +114,7 @@ api:
     create: true
     name: admin
     secret:
-      name: ~
+      name: ""
       key: password
 
 op:
@@ -122,7 +122,7 @@ op:
 
   image:
     repository: gleroy/simpaas-op
-    tag: ~
+    tag: ""
   imagePullSecrets: []
 
   podAnnotations: {}
@@ -157,13 +157,13 @@ op:
 
   chartValues: {}
 
-  logFilter: ~
+  logFilter: ""
 
   smtp:
-    host: ~
+    host: ""
     port: 25
 
-  webappUrl: ~
+  webappUrl: ""
 
 webapp:
   replicas: 1
@@ -201,15 +201,22 @@ webapp:
   ingress:
     enabled: true
     domain: ""
-    fqdn: ~
+    fqdn: ""
     tls: false
     path: /
     pathType: ImplementationSpecific
 
 ingress:
   create: true
-  className: ~
-  domain: ~
-  tlsSecretName: ~
+  className: ""
+  domain: ""
+  tlsSecretName: ""
   annotations: {}
-  additionalRules: []
+  additionalRules: {}
+    # swagger-ui:
+    #   enabled: *swaggerUiEnabled
+    #   path: *swaggerUiPath
+    #   pathType: ImplementationSpecific
+    #   tls: true
+    #   servicePort: *swaggerUiPort
+    #   prefixServiceNameByReleaseName: true

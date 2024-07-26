@@ -62,11 +62,6 @@ spec:
           value: {{ printf "0.0.0.0:%d" (.Values.api.port | int) }}
         - name: DOMAIN
           value: {{ include "simpaas.fqdn" (dict "Ingress" .Values.api.ingress "Values" .Values) }}
-        - name: JWT_SECRET
-          valueFrom:
-            secretKeyRef:
-              name: {{ include "simpaas.api.jwtSecretName" . }}
-              key: {{ .Values.api.jwtSecret.key }}
         - name: ROOT_PATH
           value: {{ .Values.api.ingress.path }}
         {{- include "simpaas.observabilityEnv" (dict "Release" .Release "Service" .Values.api "Values" .Values) | nindent 8 }}
@@ -75,12 +70,18 @@ spec:
         {{- end }}
         resources:
           {{- toYaml .Values.api.resources | nindent 10 }}
-        {{- with $volumeMounts }}
         volumeMounts:
+        - name: jwt-privkey
+          readOnly: true
+          mountPath: /opt/simpaas/etc
+        {{- with $volumeMounts }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
-      {{- with $volumes }}
       volumes:
+      - name: jwt-privkey
+        secret:
+          secretName: {{ include "simpaas.api.jwtSecretName" . }}
+      {{- with $volumes }}
       {{- toYaml . | nindent 6 }}
       {{- end }}
       {{- with $nodeSelector }}

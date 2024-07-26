@@ -34,13 +34,23 @@ groupadd -rg 1000 simpaas
 useradd -Mrd /opt/simpaas -u 1000 -g 1000 simpaas
 EOF
 
+COPY --from=rust-build --chown=1000:1000 /opt/simpaas/target/release/simpaas bin/
+
 USER simpaas
 
 ENTRYPOINT ["bin/simpaas"]
 
 FROM rust-run AS api
 
-COPY --from=rust-build --chown=1000:1000 /opt/simpaas/target/release/simpaas bin/
+USER root
+
+RUN <<EOF /bin/bash -eo pipefail
+apt update
+apt install -y libssl1.1
+apt-get clean
+EOF
+
+USER simpaas
 
 CMD ["api"]
 
@@ -50,15 +60,14 @@ USER root
 
 RUN <<EOF /bin/bash -eo pipefail
 apt update
-apt install -y curl gpg
+apt install -y apt-transport-https ca-certificates curl gpg libssl1.1
 curl https://baltocdn.com/helm/signing.asc | gpg --dearmor | tee /usr/share/keyrings/helm.gpg > /dev/null
-apt install -y apt-transport-https ca-certificates
 echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/helm.gpg] https://baltocdn.com/helm/stable/debian/ all main" | tee /etc/apt/sources.list.d/helm-stable-debian.list
 apt update
-apt install helm=3.15.1-1
+apt install -y helm=3.15.1-1
+apt-get clean
 EOF
 
-COPY --from=rust-build --chown=1000:1000 /opt/simpaas/target/release/simpaas bin/
 COPY --chown=1000:1000 charts/simpaas-app charts/simpaas-app
 
 USER simpaas

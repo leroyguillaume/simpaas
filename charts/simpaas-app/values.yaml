@@ -1,10 +1,10 @@
 serviceAccount:
   create: true
-  name: ~
+  name: ""
   automount: true
 
 ingress:
-  className: ~
+  className: ""
   annotations: {}
 
 common:
