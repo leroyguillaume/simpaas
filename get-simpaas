@@ -4,7 +4,7 @@ set -eo pipefail
 
 add_helm_repo() {
   echo "adding helm repository $1"
-  run helm repo add $1 $2
+  run helm repo add "$1" "$2"
 }
 
 check_var_is_defined() {
@@ -15,36 +15,36 @@ check_var_is_defined() {
 }
 
 ensure_installed() {
-  if ! command -v $1 > /dev/null 2>&1; then
+  if ! command -v "$1" > /dev/null 2>&1; then
     echo "installing $1..."
-    run_remote_script_as_root $1 $2
+    run_remote_script_as_root "$1" "$2" "${@:4}"
     $3
   fi
 }
 
 install_chart() {
   echo "installing $2"
-  run helm upgrade --install -n $1 --create-namespace ${@:4} $2 $3
+  run helm upgrade --install -n "$1" --create-namespace "${@:4}" "$2" "$3"
 }
 
 is_root() {
-  [ $EUID -ne 0 -a "$USE_SUDO" = "true" ]
+  [ $EUID -ne 0 ] && [ "$USE_SUDO" = "true" ]
 }
 
 k3s_post_install() {
   if [ -f ~/.kube/config ]; then
-    cp ~/.kube/config ~/.kube/config.$(date '+%s')
+    cp ~/.kube/config "$HOME/.kube/config.$(date '+%s')"
   fi
   if ! is_root; then
     prefix="sudo"
   fi
   mkdir -p ~/.kube
   $prefix cp /etc/rancher/k3s/k3s.yaml $KUBE_CONFIG
-  $prefix chown -R $USER: ~/.kube
+  $prefix chown -R "$USER:" ~/.kube
 }
 
 run() {
-  if ! $@ >> $log_file 2>&1; then
+  if ! "$@" >> $log_file 2>&1; then
     >&2 echo "command failed"
     >&2 echo "see $log_file for more information"
     exit 1
@@ -52,7 +52,7 @@ run() {
 }
 
 run_with_stdin() {
-  if ! cat - | $@ >> $log_file 2>&1; then
+  if ! cat - | "$@" >> $log_file 2>&1; then
     >&2 echo "command failed"
     >&2 echo "see $log_file for more information"
     exit 1
@@ -63,7 +63,7 @@ run_remote_script_as_root() {
   if ! is_root; then
     prefix="sudo"
   fi
-  if ! curl -sfL $2 2>> $log_file | $prefix bash - >> $log_file 2>&1; then
+  if ! curl -sfL "$2" 2>> $log_file | $prefix bash -s -- "${@:3}" >> $log_file 2>&1; then
     >&2 echo "failed to install $1"
     >&2 echo "see $log_file for more information"
     exit 1
@@ -72,55 +72,45 @@ run_remote_script_as_root() {
 
 KUBE_CONFIG=~/.kube/config
 
-cert_manager_enabled=true
 ingress_create=false
 issuer=letsencrypt
 log_file=get-simpaas.log
 ns_cert_manager=cert-manager
-ns_monitoring=monitoring
 ns_simpaas=simpaas
-otel_enabled=true
 repo_jetstack=jetstack
-repo_otel=opentelemetry
 repo_simpaas=simpaas
 sec_name_gmail=simpaas-gmail
 sec_key_gmail_pwd=password
 sec_name_gmail=simpaas-gmail
 
-set_ingress_annot="--set-json ingress.annotations={\"cert-manager.io/cluster-issuer\":\"$issuer\"}"
-
 if [ -f .env ]; then
+  # shellcheck source=/dev/null
   source .env
 fi
 
-if [ "$SIMPAAS_CERT_MANAGER_DISABLED" = "true" ]; then
-  cert_manager_enabled=false
-  unset set_ingress_annot
+if [ -n "$SIMPAAS_CONFIG" ]; then
+  set_values=(--values "$SIMPAAS_CONFIG")
 fi
-if [ ! -z "$SIMPAAS_CONFIG" ]; then
-  set_values="--values $SIMPAAS_CONFIG"
-fi
-if [ ! -z "$SIMPAAS_DOMAIN" ]; then
+if [ -n "$SIMPAAS_DOMAIN" ]; then
   ingress_create=true
 fi
 if [ "$SIMPAAS_GMAIL_RELAY_ENABLED" = "true" ]; then
   check_var_is_defined GMAIL_USER
   check_var_is_defined GMAIL_PASSWORD
-  set_smtp_env="--set-json smtp.env=[{\"name\":\"GMAIL_USER\",\"value\":\"$GMAIL_USER\"},{\"name\":\"GMAIL_PASSWORD\",\"valueFrom\":{\"secretKeyRef\":{\"name\":\"$sec_name_gmail\",\"key\":\"$sec_key_gmail_pwd\"}}}]"
-fi
-if [ "$SIMPAAS_OTEL_DISABLED" = "true" ]; then
-  otel_enabled=false
+  set_smtp_env=(--set-json "smtp.env=[{\"name\":\"GMAIL_USER\",\"value\":\"$GMAIL_USER\"},{\"name\":\"GMAIL_PASSWORD\",\"valueFrom\":{\"secretKeyRef\":{\"name\":\"$sec_name_gmail\",\"key\":\"$sec_key_gmail_pwd\"}}}]")
 fi
 
-ensure_installed k3s https://get.k3s.io k3s_post_install
+ensure_installed k3s https://get.k3s.io k3s_post_install --disable=traefik
 ensure_installed helm https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
 
-if [ "$cert_manager_enabled" = "true" ]; then
-  add_helm_repo $repo_jetstack https://charts.jetstack.io
-  install_chart $ns_cert_manager cert-manager $repo_jetstack/cert-manager \
-    --set crds.enabled=true
-  echo "creating letsencrypt issuer"
-  run_with_stdin kubectl -n $ns_cert_manager apply -f - <<EOF
+add_helm_repo $repo_jetstack https://charts.jetstack.io
+add_helm_repo $repo_simpaas https://leroyguillaume.github.io/simpaas
+run helm repo update
+
+install_chart $ns_cert_manager cert-manager $repo_jetstack/cert-manager \
+  --set crds.enabled=true
+echo "creating letsencrypt issuer"
+run_with_stdin kubectl -n $ns_cert_manager apply -f - <<EOF
 apiVersion: cert-manager.io/v1
 kind: ClusterIssuer
 metadata:
@@ -135,28 +125,14 @@ spec:
       - http01:
           ingress: {}
 EOF
-fi
 
-if [ "$otel_enabled" = "true" ]; then
-  add_helm_repo $repo_otel https://open-telemetry.github.io/opentelemetry-helm-charts
-  install_chart $ns_monitoring opentelemetry-collector $repo_otel/opentelemetry-collector \
-    --set mode=deployment \
-    --set image.repository=otel/opentelemetry-collector \
-    --set command.name=otelcol
-fi
-
-add_helm_repo $repo_simpaas https://leroyguillaume.github.io/simpaas
-install_chart $ns_simpaas simpaas $repo_simpaas/simpaas \
-  --set common.image.tag=$SIMPAAS_VERSION \
-  --set ingress.create=$ingress_create \
-  --set ingress.domain=$SIMPAAS_DOMAIN \
-  $set_ingress_annot \
-  --set common.otel.enabled=$otel_enabled \
-  --set common.otel.url=http://opentelemetry-collector.$ns_monitoring.svc.cluster.local:4317 \
-  --set api.ingress.tls=$cert_manager_enabled \
-  --set op.ingress.tls=$cert_manager_enabled \
-  $set_smtp_env \
-  $set_values
+install_chart $ns_simpaas simpaas $repo_simpaas/simpaas-stack \
+  --set "simpaas.common.image.tag=$SIMPAAS_VERSION" \
+  --set simpaas.ingress.create=$ingress_create \
+  --set "simpaas.ingress.domain=$SIMPAAS_DOMAIN" \
+  --set-json "simpaas.ingress.annotations={\"cert-manager.io/cluster-issuer\":\"$issuer\"}" \
+  "${set_smtp_env[@]}" \
+  "${set_values[@]}"
 
 if [ "$SIMPAAS_GMAIL_RELAY_ENABLED" = "true" ]; then
   echo "creating gmail secret"
@@ -167,6 +143,6 @@ metadata:
   name: $sec_name_gmail
 type: Opaque
 data:
-  $sec_key_gmail_pwd: $(echo -n $GMAIL_PASSWORD | base64)
+  $sec_key_gmail_pwd: $(echo -n "$GMAIL_PASSWORD" | base64)
 EOF
 fi

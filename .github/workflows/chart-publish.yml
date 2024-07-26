@@ -31,6 +31,7 @@ jobs:
 
     - name: add helm repositories
       run: |
+        helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
         helm repo add jetstack https://charts.jetstack.io
         helm repo add opentelemetry https://open-telemetry.github.io/opentelemetry-helm-charts
 
@@ -45,6 +46,12 @@ jobs:
 
     - name: package simpaas-app
       working-directory: charts/simpaas-app
+      run: |
+        helm dependency build
+        helm package -d /tmp/charts .
+
+    - name: package simpaas-stack
+      working-directory: charts/simpaas-stack
       run: |
         helm dependency build
         helm package -d /tmp/charts .

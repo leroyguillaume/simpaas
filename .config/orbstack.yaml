@@ -1,0 +1,23 @@
+smtp:
+  env:
+  - name: GMAIL_USER
+    valueFrom:
+      secretKeyRef:
+        name: simpaas-gmail
+        key: user
+  - name: GMAIL_PASSWORD
+    valueFrom:
+      secretKeyRef:
+        name: simpaas-gmail
+        key: password
+
+simpaas:
+  common:
+    image:
+      tag: latest
+      pullPolicy: Always
+
+    logFilter: simpaas=debug,warn
+
+  ingress:
+    domain: simpaas.k8s.orb.local

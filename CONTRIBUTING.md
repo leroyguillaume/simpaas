@@ -32,7 +32,9 @@ You can install the [Helm chart](charts/simpaas).
 
 ### Orbstack
 
-If you're using Orbstack, you can use orbstrack-install script directly. It will install the complete stack by using chart [simpaas-orbstack](charts/simpaas-orbstack).
+If you're using Orbstack, you can use orbstrack-install script directly. It will install the complete stack by using chart [simpaas-stack](charts/simpaas-stack) and a [dedicated configuration](.config/orbstack.yaml).
+
+You can customize configuration by creating a file `.local/values.yaml`.
 
 To use SMTP locally, you can use SMTP server as relay to GMail.
 
@@ -43,8 +45,6 @@ export GMAIL_USER=your email
 export GMAIL_PASSWORD=your token
 ./tools/orbstack-install.sh
 ```
-
-If you want to customize configuration, you can create a file `.local/values.yaml`.
 
 ### API
 

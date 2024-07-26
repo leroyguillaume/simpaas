@@ -3,8 +3,7 @@
 {{- $tlsHosts := list -}}
 {{- $apiIngress := dict "Ingress" .Values.api.ingress "Service" (dict "Name" (include "simpaas.api.name" .) "Port" .Values.api.port) "Values" .Values -}}
 {{- $webappIngress := dict "Ingress" .Values.webapp.ingress "Service" (dict "Name" (include "simpaas.webapp.name" .) "Port" .Values.webapp.port) "Values" .Values -}}
-{{- $swaggerUiIngress := dict "Ingress" .Values.swaggerUi.ingress "Service" (dict "Name" (include "simpaas.swaggerUi.name" .) "Port" .Values.swaggerUi.port) "Values" .Values -}}
-{{- $ingresses := list $apiIngress $webappIngress $swaggerUiIngress -}}
+{{- $ingresses := list $apiIngress $webappIngress -}}
 {{- range $ingress := $ingresses -}}
 {{- if $ingress.Ingress.enabled -}}
 {{- $fqdn := include "simpaas.fqdn" $ingress -}}
@@ -15,6 +14,19 @@
 {{- $fqdns = set $fqdns $fqdn (append $ingresses $ingress) -}}
 {{- if $ingress.Ingress.tls -}}
 {{- $tlsHosts = append $tlsHosts $fqdn -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- range $rule := .Values.ingress.additionalRules -}}
+{{- if $rule.enabled -}}
+{{- $ingress := dict "Ingress" $rule "Service" (dict "Name" $rule.service.name "Port" $rule.service.port) -}}
+{{- $ingresses := get $fqdns $.Values.ingress.domain -}}
+{{- if not $ingresses -}}
+{{- $ingresses = list -}}
+{{- end -}}
+{{- $fqdns = set $fqdns $rule.host (append $ingresses $ingress) -}}
+{{- if $rule.tls -}}
+{{- $tlsHosts = append $tlsHosts $rule.host -}}
 {{- end -}}
 {{- end -}}
 {{- end -}}

@@ -4,13 +4,12 @@
 {{- $imagePullSecrets := concat .Values.common.imagePullSecrets .Values.op.imagePullSecrets -}}
 {{- $podSecurityContext := merge .Values.common.podSecurityContext .Values.op.podSecurityContext -}}
 {{- $securityContext := merge .Values.common.securityContext .Values.op.securityContext -}}
-{{- $env := concat .Values.common.env .Values.op.env -}}
+{{- $env := concat .Values.common.env .Values.op.env .Values.op.extraEnv -}}
 {{- $volumeMounts := concat .Values.common.volumeMounts .Values.op.volumeMounts -}}
 {{- $volumes := concat .Values.common.volumes .Values.op.volumes -}}
 {{- $nodeSelector := merge .Values.common.nodeSelector .Values.op.nodeSelector -}}
 {{- $affinity := merge .Values.common.affinity .Values.op.affinity -}}
 {{- $tolerations := concat .Values.common.tolerations .Values.op.tolerations -}}
-{{- $smtpSecretName := default (printf "%s-smtp" .Release.Name) .Values.op.smtp.credentialsSecret.name -}}
 {{- $webappFqdn := include "simpaas.fqdn" (dict "Ingress" .Values.webapp.ingress "Values" .Values) -}}
 apiVersion: apps/v1
 kind: Deployment
@@ -59,31 +58,10 @@ spec:
         env:
         - name: CHART_VALUES
           value: {{ printf "%s/values.yaml" $chartValuesDir }}
-                {{- if .Values.op.smtp.host }}
         - name: SMTP_HOST
-          value: {{ .Values.op.smtp.host }}
-        {{- else if .Values.smtp.enabled }}
-        - name: SMTP_HOST
-          value: {{ include "simpaas.smtp.name" . }}
-        {{- end }}
+          value: {{ default (printf "%s-smtp" .Release.Name) .Values.op.smtp.host }}
         - name: SMTP_PORT
           value: {{ .Values.op.smtp.port | quote }}
-        {{- if .Values.op.smtp.authEnabled }}
-        - name: SMTP_USER
-          valueFrom:
-            secretKeyRef:
-              name: {{ $smtpSecretName }}
-              key: {{ .Values.op.smtp.credentialsSecret.userKey }}
-        - name: SMTP_PASSWORD
-          valueFrom:
-            secretKeyRef:
-              name: {{ $smtpSecretName }}
-              key: {{ .Values.op.smtp.credentialsSecret.passwordKey }}
-        {{- end }}
-        - name: SMTP_TLS
-          value: {{ .Values.op.smtp.tls | quote }}
-        - name: SMTP_IMPLICIT_TLS
-          value: {{ .Values.op.smtp.implicitTls | quote }}
         {{- if .Values.op.webappUrl }}
         - name: WEBAPP_URL
           value: {{ .Values.op.webappUrl }}
@@ -95,7 +73,7 @@ spec:
           value: http://{{ $webappFqdn }}
         {{- end }}
         {{- end }}
-        {{- include "simpaas.env" (dict "Release" .Release "Service" .Values.api "Values" .Values) | nindent 8 }}
+        {{- include "simpaas.observabilityEnv" (dict "Release" .Release "Service" .Values.api "Values" .Values) | nindent 8 }}
         {{- with $env }}
         {{- toYaml . | nindent 8 }}
         {{- end }}

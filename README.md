@@ -2,9 +2,11 @@
 
 SimPaaS is a Platform as a Service (PaaS) based on [Kubernetes](https://kubernetes.io/) and [Helm](https://helm.sh/).
 
-## Getting started
+## Install
 
-This command installs a turnkey Kubernetes cluster with SimPaaS (monitoring, TLS, etc.). If you have already a Kubernetes cluster, you can [install the Helm chart](charts/simpaas/).
+### Using bundle script
+
+This script installs a turnkey Kubernetes cluster with SimPaaS (monitoring, TLS, etc.).
 
 ```bash
 curl -sfL https://raw.githubusercontent.com/leroyguillaume/simpaas/main/get-simpaas | bash -
@@ -15,10 +17,6 @@ The script will source a `.env` file if it exists.
 Note that the script is idempotent.
 
 All the environment variables are optional but we recommend to define [`SIMPAAS_DOMAIN`](#simpaas_domain) otherwise SimPaaS will not be accessible outside the cluster.
-
-#### `SIMPAAS_CERT_MANAGER_DISABLED`
-
-Disable [cert-manager](https://cert-manager.io/) installation. TLS will be disabled.
 
 #### `SIMPAAS_CERT_MANAGER_EMAIL`
 
@@ -38,13 +36,36 @@ Configure SimPaaS to use GMail as SMTP relay. If it is enabled, you need to defi
 - `GMAIL_USER`: your email address
 - `GMAIL_PASSWORD`: a valid [app password](https://support.google.com/accounts/answer/185833)
 
-#### `SIMPAAS_OTEL_DISABLED`
-
-Disable [OpenTelemetry Collector](https://opentelemetry.io/docs/collector/) installation.
 
 #### `SIMPAAS_VERSION`
 
 Specify SimPaaS version.
+
+### Using Helm chart
+
+```bash
+helm repo add simpaas https://leroyguillaume.github.io/simpaas
+```
+
+#### simpaas-stack
+
+This chart will install SimPaaS and all required softwares.
+
+```bash
+helm install simpaas simpaas/simpaas-stack
+```
+
+You can find values reference [here](charts/simpaas-stack/values.yaml).
+
+#### simpaas
+
+This chart will install SimPaaS only.
+
+```bash
+helm install simpaas simpaas/simpaas
+```
+
+You can find values reference [here](charts/simpaas/values.yaml).
 
 ## Architecture
 

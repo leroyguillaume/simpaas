@@ -1,0 +1,85 @@
+{{- $podAnnotations := merge .Values.common.podAnnotations .Values.webapp.podAnnotations -}}
+{{- $podLabels := merge .Values.common.podLabels .Values.webapp.podLabels -}}
+{{- $imagePullSecrets := concat .Values.common.imagePullSecrets .Values.webapp.imagePullSecrets -}}
+{{- $podSecurityContext := merge .Values.common.podSecurityContext .Values.webapp.podSecurityContext -}}
+{{- $securityContext := merge .Values.common.securityContext .Values.webapp.securityContext -}}
+{{- $env := concat .Values.common.env .Values.webapp.env -}}
+{{- $volumeMounts := concat .Values.common.volumeMounts .Values.webapp.volumeMounts -}}
+{{- $volumes := concat .Values.common.volumes .Values.webapp.volumes -}}
+{{- $nodeSelector := merge .Values.common.nodeSelector .Values.webapp.nodeSelector -}}
+{{- $affinity := merge .Values.common.affinity .Values.webapp.affinity -}}
+{{- $tolerations := concat .Values.common.tolerations .Values.webapp.tolerations -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "simpaas.webapp.name" . }}
+  labels:
+    {{- include "simpaas.webapp.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.webapp.replicas }}
+  selector:
+    matchLabels:
+      {{- include "simpaas.webapp.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      {{- with $podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "simpaas.webapp.labels" . | nindent 8 }}
+        {{- with $podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- with $imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "simpaas.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml $podSecurityContext | nindent 8 }}
+      containers:
+      - name: api
+        securityContext:
+          {{- toYaml $securityContext | nindent 12 }}
+        image: {{ printf "%s:%s" .Values.webapp.image.repository (include "simpaas.webapp.tag" .) }}
+        imagePullPolicy: {{ default .Values.common.image.pullPolicy .Values.webapp.image.pullPolicy }}
+        ports:
+        - name: http
+          containerPort: {{ .Values.webapp.port }}
+          protocol: TCP
+        {{- with .Values.webapp.livenessProbe }}
+        livenessProbe:
+          {{ toYaml . | nindent 10 }}
+        {{- end }}
+        {{- with .Values.webapp.readinessProbe }}
+        readinessProbe:
+          {{ toYaml . | nindent 10 }}
+        {{- end }}
+        {{- with $env }}
+        env:
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+        resources:
+          {{- toYaml .Values.webapp.resources | nindent 10 }}
+        {{- with $volumeMounts }}
+        volumeMounts:
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with $volumes }}
+      volumes:
+      {{- toYaml . | nindent 6 }}
+      {{- end }}
+      {{- with $nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

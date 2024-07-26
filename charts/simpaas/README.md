@@ -1,4 +1,8 @@
-# SimPaaS Helm chart
+# simpaas
+
+This chart will install SimPaaS.
+
+If you want to install it and all required softwares, you can use [simpaas-stack](../simpaas-stack/) chart.
 
 ## Getting started
 

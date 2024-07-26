@@ -2,18 +2,6 @@
 {{- printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" | trunc 63 | trimSuffix "-" }}
 {{- end }}
 
-{{- define "simpaas.env" -}}
-{{- $logFilter := default .Values.common.logFilter .Service.logFilter -}}
-{{- if $logFilter }}
-- name: LOG_FILTER
-  value: {{ $logFilter }}
-{{- end }}
-{{- if .Values.common.otel.enabled }}
-- name: OTEL_COLLECTOR_URL
-  value: {{ default (printf "http://%s-opentelemetry-collector:4317" .Release.Name) .Values.common.otel.collectorUrl }}
-{{- end }}
-{{- end -}}
-
 {{- define "simpaas.fqdn" -}}
 {{- if .Ingress.domain -}}
 {{ default (printf "%s.%s" .Ingress.domain .Values.ingress.domain) .Ingress.fqdn }}
@@ -26,6 +14,18 @@
 helm.sh/chart: {{ include "simpaas.chart" . }}
 app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{- end }}
+
+{{- define "simpaas.observabilityEnv" -}}
+{{- $logFilter := default .Values.common.logFilter .Service.logFilter -}}
+{{- if $logFilter }}
+- name: LOG_FILTER
+  value: {{ $logFilter }}
+{{- end }}
+{{- if .Values.common.otel.enabled }}
+- name: OTEL_COLLECTOR_URL
+  value: {{ default (printf "http://%s-opentelemetry-collector:4317" .Release.Name) .Values.common.otel.collectorUrl }}
+{{- end }}
+{{- end -}}
 
 {{- define "simpaas.serviceAccountName" -}}
 {{ default .Release.Name .Values.serviceAccount.name }}
@@ -77,7 +77,7 @@ app.kubernetes.io/component: op
 
 {{- define "simpaas.webapp.labels" -}}
 {{ include "simpaas.labels" . }}
-app.kubernetes.io/version: {{ include "simpaas.webapp.tag" . }}
+app.kubernetes.io/version: {{ include "simpaas.webapp.tag" . | quote }}
 {{ include "simpaas.webapp.selectorLabels" . }}
 {{- end }}
 
@@ -94,35 +94,3 @@ app.kubernetes.io/component: webapp
 {{- define "simpaas.webapp.tag" -}}
 {{ default .Chart.AppVersion (default .Values.common.image.tag .Values.webapp.image.tag) }}
 {{- end -}}
-
-{{- define "simpaas.smtp.labels" -}}
-{{ include "simpaas.labels" . }}
-app.kubernetes.io/version: {{ .Values.smtp.image.tag }}
-{{ include "simpaas.smtp.selectorLabels" . }}
-{{- end }}
-
-{{- define "simpaas.smtp.name" -}}
-{{ printf "%s-smtp" .Release.Name| trunc 63 | trimSuffix "-"  }}
-{{- end -}}
-
-{{- define "simpaas.smtp.selectorLabels" -}}
-app.kubernetes.io/name: {{ include "simpaas.smtp.name" . }}
-app.kubernetes.io/instance: {{ .Release.Name }}
-app.kubernetes.io/component: smtp
-{{- end }}
-
-{{- define "simpaas.swaggerUi.labels" -}}
-{{ include "simpaas.labels" . }}
-app.kubernetes.io/version: {{ .Values.swaggerUi.image.tag }}
-{{ include "simpaas.swaggerUi.selectorLabels" . }}
-{{- end }}
-
-{{- define "simpaas.swaggerUi.name" -}}
-{{ printf "%s-swagger-ui" .Release.Name | trunc 63 | trimSuffix "-"  }}
-{{- end -}}
-
-{{- define "simpaas.swaggerUi.selectorLabels" -}}
-app.kubernetes.io/name: {{ include "simpaas.swaggerUi.name" . }}
-app.kubernetes.io/instance: {{ .Release.Name }}
-app.kubernetes.io/component: swagger-ui
-{{- end }}
