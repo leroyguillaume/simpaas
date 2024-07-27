@@ -51,8 +51,6 @@ impl Display for Action<'_> {
 )]
 #[serde(rename_all = "camelCase")]
 pub struct AppSpec {
-    /// Chart to use to install app.
-    pub chart: Chart,
     /// Namespace.
     pub namespace: String,
     /// Owner of the app.
@@ -62,27 +60,6 @@ pub struct AppSpec {
     /// Helm chart values.
     #[serde(default)]
     pub values: Map<String, Value>,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, JsonSchema, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub enum Chart {
-    /// Built-in chart.
-    BuiltIn {},
-}
-
-impl Default for Chart {
-    fn default() -> Self {
-        Self::BuiltIn {}
-    }
-}
-
-impl Display for Chart {
-    fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
-        match self {
-            Self::BuiltIn {} => write!(f, "built_in"),
-        }
-    }
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, JsonSchema, Serialize, Validate)]

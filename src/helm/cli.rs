@@ -2,10 +2,7 @@ use std::path::PathBuf;
 
 use tracing::{debug, error, instrument};
 
-use crate::{
-    cmd::CommandRunner,
-    domain::{App, Chart},
-};
+use crate::{cmd::CommandRunner, domain::App};
 
 use super::{HelmClient, Result};
 
@@ -79,11 +76,9 @@ impl<R: CommandRunner> HelmClient for CliHelmClient<R> {
         Ok(())
     }
 
-    #[instrument("helm_upgrade", skip(self, app, filepaths), fields(app.chart = %app.spec.chart, app.name = name, app.namespace = app.spec.namespace))]
+    #[instrument("helm_upgrade", skip(self, app, filepaths), fields(app.name = name, app.namespace = app.spec.namespace))]
     async fn upgrade(&self, name: &str, app: &App, filepaths: &[PathBuf]) -> Result {
-        let chart = match &app.spec.chart {
-            Chart::BuiltIn {} => self.args.chart_path.to_str().ok_or(Error::InvalidUnicode)?,
-        };
+        let chart = self.args.chart_path.to_str().ok_or(Error::InvalidUnicode)?;
         let mut args = vec![
             "upgrade",
             "-n",

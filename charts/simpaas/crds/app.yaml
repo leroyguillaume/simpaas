@@ -20,16 +20,6 @@ spec:
         properties:
           spec:
             properties:
-              chart:
-                description: Chart to use to install app.
-                oneOf:
-                - required:
-                  - builtIn
-                properties:
-                  builtIn:
-                    description: Built-in chart.
-                    type: object
-                type: object
               namespace:
                 description: Namespace.
                 type: string
@@ -109,7 +99,6 @@ spec:
                 description: Helm chart values.
                 type: object
             required:
-            - chart
             - namespace
             - owner
             - services

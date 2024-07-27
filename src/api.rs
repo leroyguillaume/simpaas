@@ -29,7 +29,7 @@ use uuid::Uuid;
 use validator::{Validate, ValidationError, ValidationErrors};
 
 use crate::{
-    domain::{Action, App, AppSpec, Chart, Invitation, InvitationSpec, Service, User, UserSpec},
+    domain::{Action, App, AppSpec, Invitation, InvitationSpec, Service, User, UserSpec},
     jwt::JwtEncoder,
     kube::{AppFilter, KubeClient, FINALIZER},
     pwd::PasswordEncoder,
@@ -163,9 +163,6 @@ struct AppFilterQuery {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, JsonSchema, Serialize, Validate)]
 #[serde(rename_all = "camelCase")]
 struct CreateAppRequest {
-    /// Chart to use to install app.
-    #[serde(default)]
-    chart: Chart,
     /// Name.
     #[serde(deserialize_with = "string_trim")]
     #[validate(length(min = 1))]
@@ -348,7 +345,6 @@ async fn create_app<J: JwtEncoder, K: KubeClient, P: PasswordEncoder>(
         }
         let namespace = req.namespace.unwrap_or_else(|| req.name.clone());
         let spec = AppSpec {
-            chart: req.chart,
             namespace,
             owner: username,
             services: req.services,
