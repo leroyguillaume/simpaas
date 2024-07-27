@@ -1,8 +1,14 @@
-use std::{borrow::Cow, collections::BTreeSet, net::SocketAddr, sync::Arc};
+use std::{
+    borrow::Cow,
+    collections::{BTreeSet, HashMap},
+    net::SocketAddr,
+    sync::Arc,
+};
 
 use aide::{
     axum::ApiRouter,
-    openapi::{Info, OpenApi},
+    openapi::{ApiKeyLocation, Info, OpenApi, SecurityScheme},
+    transform::{TransformOpenApi, TransformOperation, TransformParameter, TransformResponse},
     OperationOutput,
 };
 use axum::{
@@ -20,7 +26,7 @@ use kube::api::ObjectMeta;
 use regex::Regex;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use serde_json::{Map, Value};
+use serde_json::{json, Map, Value};
 use serde_trim::{btreeset_string_trim, option_string_trim, string_trim};
 use tokio::net::TcpListener;
 use tower_http::trace::TraceLayer;
@@ -39,6 +45,9 @@ use crate::{
 pub const PATH_JOIN: &str = "/join";
 
 const COOKIE_NAME_JWT: &str = "simpaas-jwt";
+
+const SECURITY_SCHEME_BEARER: &str = "bearerAuth";
+const SECURITY_SCHEME_COOKIE: &str = "cookieAuth";
 
 pub struct ApiContext<J: JwtEncoder, K: KubeClient, P: PasswordEncoder> {
     pub cookie: CookieArgs,
@@ -135,13 +144,7 @@ impl OperationOutput for Error {
         _ctx: &mut aide::gen::GenContext,
         _operation: &mut aide::openapi::Operation,
     ) -> Vec<(Option<u16>, aide::openapi::Response)> {
-        vec![(
-            Some(500),
-            aide::openapi::Response {
-                description: "An unexpected error occurred".into(),
-                ..Default::default()
-            },
-        )]
+        vec![]
     }
 
     fn operation_response(
@@ -275,28 +278,72 @@ fn create_router<J: JwtEncoder + 'static, K: KubeClient + 'static, P: PasswordEn
         ..Default::default()
     };
     let router = ApiRouter::new()
-        .api_route("/_health", aide::axum::routing::get(health))
-        .api_route("/app", aide::axum::routing::get(list_apps))
-        .api_route("/app", aide::axum::routing::post(create_app))
-        .api_route("/app/:name", aide::axum::routing::get(get_app))
-        .api_route("/app/:name", aide::axum::routing::put(update_app))
-        .api_route("/app/:name", aide::axum::routing::delete(delete_app))
+        .api_route(
+            "/app",
+            aide::axum::routing::get_with(list_apps, list_apps_doc),
+        )
+        .api_route(
+            "/app",
+            aide::axum::routing::post_with(create_app, create_app_doc),
+        )
+        .api_route(
+            "/app/:name",
+            aide::axum::routing::get_with(get_app, get_app_doc),
+        )
+        .api_route(
+            "/app/:name",
+            aide::axum::routing::put_with(update_app, update_app_doc),
+        )
+        .api_route(
+            "/app/:name",
+            aide::axum::routing::delete_with(delete_app, delete_app_doc),
+        )
         .api_route(
             "/auth",
-            aide::axum::routing::post(authenticate_with_password),
+            aide::axum::routing::post_with(
+                authenticate_with_password,
+                authenticate_with_password_doc,
+            ),
         )
         .api_route(
             &format!("{PATH_JOIN}/:token"),
-            aide::axum::routing::put(join),
+            aide::axum::routing::put_with(join, join_doc),
         )
-        .api_route("/user/invite", aide::axum::routing::post(create_invitation))
+        .api_route(
+            "/user/invite",
+            aide::axum::routing::post_with(create_invitation, create_invitation_doc),
+        )
+        .route("/_health", axum::routing::get(health))
         .route("/_doc", axum::routing::get(doc));
     ApiRouter::new()
         .nest(root_path, router)
-        .finish_api(&mut api)
+        .finish_api_with(&mut api, api_doc)
         .with_state(Arc::new(ctx))
         .layer(trace_layer)
         .layer(Extension(api))
+}
+
+fn api_doc(api: TransformOpenApi) -> TransformOpenApi {
+    api.title("SimPaaS API")
+        .summary(env!("CARGO_PKG_DESCRIPTION"))
+        .security_scheme(
+            SECURITY_SCHEME_BEARER,
+            SecurityScheme::Http {
+                bearer_format: Some("Bearer <JWT>".into()),
+                description: None,
+                extensions: Default::default(),
+                scheme: "Bearer".into(),
+            },
+        )
+        .security_scheme(
+            SECURITY_SCHEME_COOKIE,
+            SecurityScheme::ApiKey {
+                description: None,
+                extensions: Default::default(),
+                location: ApiKeyLocation::Cookie,
+                name: COOKIE_NAME_JWT.into(),
+            },
+        )
 }
 
 #[instrument(skip(jar, ctx, req), fields(auth.name = req.user))]
@@ -319,6 +366,13 @@ async fn authenticate_with_password<J: JwtEncoder, K: KubeClient, P: PasswordEnc
     } else {
         Err(Error::WrongCredentials)
     }
+}
+
+fn authenticate_with_password_doc(op: TransformOperation) -> TransformOperation {
+    op.description("Generate a JWT.")
+        .response::<200, Json<JwtResponse>>()
+        .response_with::<401, (), _>(|op| op.description("Invalid credentials."))
+        .response_with::<422, (), _>(unprocessable_entity_doc)
 }
 
 async fn create_app<J: JwtEncoder, K: KubeClient, P: PasswordEncoder>(
@@ -366,6 +420,17 @@ async fn create_app<J: JwtEncoder, K: KubeClient, P: PasswordEncoder>(
     .await
 }
 
+fn create_app_doc(op: TransformOperation) -> TransformOperation {
+    op.description("Create a new app.")
+        .security_requirement_multi([SECURITY_SCHEME_BEARER, SECURITY_SCHEME_COOKIE])
+        .response::<201, Json<AppSpec>>()
+        .response_with::<400, Json<HashMap<String, Value>>, _>(bad_request_doc)
+        .response_with::<401, (), _>(unauthorized_doc)
+        .response_with::<403, (), _>(forbidden_doc)
+        .response_with::<409, (), _>(|op| op.description("App with same name already exists."))
+        .response_with::<422, (), _>(unprocessable_entity_doc)
+}
+
 async fn create_invitation<J: JwtEncoder, K: KubeClient, P: PasswordEncoder>(
     auth_header: Option<TypedHeader<Authorization<Bearer>>>,
     jar: CookieJar,
@@ -404,6 +469,15 @@ async fn create_invitation<J: JwtEncoder, K: KubeClient, P: PasswordEncoder>(
     .await
 }
 
+fn create_invitation_doc(op: TransformOperation) -> TransformOperation {
+    op.description("Send an invitation.")
+        .security_requirement_multi([SECURITY_SCHEME_BEARER, SECURITY_SCHEME_COOKIE])
+        .response::<201, Json<InvitationSpec>>()
+        .response_with::<401, (), _>(unauthorized_doc)
+        .response_with::<403, (), _>(forbidden_doc)
+        .response_with::<422, (), _>(unprocessable_entity_doc)
+}
+
 async fn delete_app<J: JwtEncoder, K: KubeClient, P: PasswordEncoder>(
     auth_header: Option<TypedHeader<Authorization<Bearer>>>,
     jar: CookieJar,
@@ -428,6 +502,16 @@ async fn delete_app<J: JwtEncoder, K: KubeClient, P: PasswordEncoder>(
     }
     .instrument(span)
     .await
+}
+
+fn delete_app_doc(op: TransformOperation) -> TransformOperation {
+    op.description("Delete an app.")
+        .security_requirement_multi([SECURITY_SCHEME_BEARER, SECURITY_SCHEME_COOKIE])
+        .parameter("name", param_app_name_doc)
+        .response::<204, ()>()
+        .response_with::<401, (), _>(unauthorized_doc)
+        .response_with::<403, (), _>(forbidden_doc)
+        .response_with::<404, (), _>(not_found_doc)
 }
 
 #[instrument(skip(api))]
@@ -457,6 +541,18 @@ async fn get_app<J: JwtEncoder, K: KubeClient, P: PasswordEncoder>(
     }
     .instrument(span)
     .await
+}
+
+fn get_app_doc(op: TransformOperation) -> TransformOperation {
+    op.description("Get an app.")
+        .security_requirement_multi([SECURITY_SCHEME_BEARER, SECURITY_SCHEME_COOKIE])
+        .parameter("name", param_app_name_doc)
+        .response::<200, Json<AppSpec>>()
+        .response_with::<400, Json<HashMap<String, Value>>, _>(bad_request_doc)
+        .response_with::<401, (), _>(unauthorized_doc)
+        .response_with::<403, (), _>(forbidden_doc)
+        .response_with::<404, (), _>(not_found_doc)
+        .response_with::<422, (), _>(unprocessable_entity_doc)
 }
 
 #[instrument]
@@ -505,6 +601,18 @@ async fn join<J: JwtEncoder, K: KubeClient, P: PasswordEncoder>(
     auth_response(&req.user, &user.spec, jar, &ctx)
 }
 
+fn join_doc(op: TransformOperation) -> TransformOperation {
+    op.description("Accept a previously sent invitation.")
+        .parameter("token", |op: TransformParameter<String>| {
+            op.description("Invitation token.")
+        })
+        .response::<200, Json<JwtResponse>>()
+        .response_with::<400, Json<HashMap<String, Value>>, _>(bad_request_doc)
+        .response_with::<404, Json<HashMap<String, Value>>, _>(not_found_doc)
+        .response_with::<409, (), _>(|op| op.description("User with same name already exists."))
+        .response_with::<422, (), _>(unprocessable_entity_doc)
+}
+
 async fn list_apps<J: JwtEncoder, K: KubeClient, P: PasswordEncoder>(
     auth_header: Option<TypedHeader<Authorization<Bearer>>>,
     jar: CookieJar,
@@ -527,6 +635,14 @@ async fn list_apps<J: JwtEncoder, K: KubeClient, P: PasswordEncoder>(
     }
     .instrument(span)
     .await
+}
+
+fn list_apps_doc(op: TransformOperation) -> TransformOperation {
+    op.description("List all apps.")
+        .security_requirement_multi([SECURITY_SCHEME_BEARER, SECURITY_SCHEME_COOKIE])
+        .response::<200, Json<Vec<AppSpec>>>()
+        .response_with::<401, (), _>(unauthorized_doc)
+        .response_with::<422, (), _>(unprocessable_entity_doc)
 }
 
 async fn update_app<J: JwtEncoder, K: KubeClient, P: PasswordEncoder>(
@@ -574,6 +690,18 @@ async fn update_app<J: JwtEncoder, K: KubeClient, P: PasswordEncoder>(
     }
     .instrument(span)
     .await
+}
+
+fn update_app_doc(op: TransformOperation) -> TransformOperation {
+    op.description("Update an app.")
+        .security_requirement_multi([SECURITY_SCHEME_BEARER, SECURITY_SCHEME_COOKIE])
+        .parameter("name", param_app_name_doc)
+        .response::<201, Json<AppSpec>>()
+        .response_with::<400, Json<HashMap<String, Value>>, _>(bad_request_doc)
+        .response_with::<401, (), _>(unauthorized_doc)
+        .response_with::<403, (), _>(forbidden_doc)
+        .response_with::<412, (), _>(|op| op.description("New owner doesn't exist."))
+        .response_with::<422, (), _>(unprocessable_entity_doc)
 }
 
 #[instrument(skip(auth_header, jar, encoder, kube))]
@@ -653,6 +781,45 @@ fn auth_response<J: JwtEncoder, K: KubeClient, P: PasswordEncoder>(
         jar.add(cookie),
         Json(JwtResponse { jwt: jwt.token }),
     ))
+}
+
+fn param_app_name_doc(op: TransformParameter<String>) -> TransformParameter<String> {
+    op.description("Name of the app.")
+}
+
+fn bad_request_doc(
+    op: TransformResponse<HashMap<String, Value>>,
+) -> TransformResponse<HashMap<String, Value>> {
+    op.description("The request body is invalid.")
+        .example(HashMap::from_iter([(
+            "name".into(),
+            json!([
+                {
+                    "code": "length",
+                    "message": null,
+                    "params": {
+                        "value": "",
+                        "min": 1
+                    }
+                }
+            ]),
+        )]))
+}
+
+fn forbidden_doc<R>(op: TransformResponse<R>) -> TransformResponse<R> {
+    op.description("You're not allowed to do this action.")
+}
+
+fn not_found_doc<R>(op: TransformResponse<R>) -> TransformResponse<R> {
+    op.description("The resource doesn't exist.")
+}
+
+fn unauthorized_doc<R>(op: TransformResponse<R>) -> TransformResponse<R> {
+    op.description("Invalid JWT.")
+}
+
+fn unprocessable_entity_doc<R>(op: TransformResponse<R>) -> TransformResponse<R> {
+    op.description("Malformed request.")
 }
 
 fn default_filter() -> String {

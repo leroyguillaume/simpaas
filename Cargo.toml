@@ -35,6 +35,7 @@ uuid = {version = "1", features = ["serde", "v4"]}
 validator = {version = "0", features = ["derive"]}
 
 [package]
+description = "Platform as a Service (PaaS) based on Kubernetes and Helm."
 edition = "2021"
 name = "simpaas"
 version = "0.1.0"

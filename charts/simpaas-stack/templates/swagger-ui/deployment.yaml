@@ -57,8 +57,12 @@ spec:
         readinessProbe:
           {{ toYaml . | nindent 10 }}
         {{- end }}
-        {{- with $env }}
         env:
+        - name: BASE_URL
+          value: {{ .Values.swaggerUi.baseUrl }}
+        - name: SWAGGER_JSON_URL
+          value: {{ .Values.swaggerUi.apiUrl }}
+        {{- with $env }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
         resources:

@@ -128,6 +128,7 @@ spec:
 EOF
 
 install_chart $ns_simpaas simpaas $repo_simpaas/simpaas-stack \
+  --set "swaggerUi.apiUrl=https://$SIMPAAS_DOMAIN/api/_doc" \
   --set-json "grafana={\"grafana.ini\":{\"server\":{\"domain\":\"$SIMPAAS_DOMAIN\"}}}" \
   --set "simpaas.common.image.tag=$SIMPAAS_VERSION" \
   --set-json "simpaas.ingress.annotations={\"cert-manager.io/cluster-issuer\":\"$issuer\"}" \

@@ -11,6 +11,12 @@ use serde_json::{Map, Value};
 use serde_trim::string_trim;
 use validator::Validate;
 
+const PERM_CREATE_APP: &str = "createApp";
+const PERM_DELETE_APP: &str = "deleteApp";
+const PERM_INVITE_USERS: &str = "inviteUsers";
+const PERM_READ_APP: &str = "readApp";
+const PERM_UPDATE_APP: &str = "updateApp";
+
 #[derive(Debug, thiserror::Error)]
 #[error("regex error: {0}")]
 pub struct PermissionError(
@@ -31,11 +37,11 @@ pub enum Action<'a> {
 impl Display for Action<'_> {
     fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
         match self {
-            Self::CreateApp => write!(f, "create_app"),
-            Self::DeleteApp(pattern) => write!(f, "delete_app(`{pattern}`)"),
-            Self::InviteUsers => write!(f, "invite_users"),
-            Self::ReadApp(pattern) => write!(f, "read_app(`{pattern}`)"),
-            Self::UpdateApp(pattern) => write!(f, "update_app(`{pattern}`)"),
+            Self::CreateApp => write!(f, "{PERM_CREATE_APP}"),
+            Self::DeleteApp(pattern) => write!(f, "{PERM_DELETE_APP}(`{pattern}`)"),
+            Self::InviteUsers => write!(f, "{PERM_INVITE_USERS}"),
+            Self::ReadApp(pattern) => write!(f, "{PERM_READ_APP}(`{pattern}`)"),
+            Self::UpdateApp(pattern) => write!(f, "{PERM_UPDATE_APP}(`{pattern}`)"),
         }
     }
 }
@@ -153,11 +159,11 @@ impl Permission {
 impl Display for Permission {
     fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
         match self {
-            Self::CreateApp {} => write!(f, "create_app"),
-            Self::DeleteApp { name } => write!(f, "delete_app(`{name}`)"),
-            Self::InviteUsers {} => write!(f, "invite_users"),
-            Self::ReadApp { name } => write!(f, "read_app(`{name}`)"),
-            Self::UpdateApp { name } => write!(f, "update_app(`{name}`)"),
+            Self::CreateApp {} => write!(f, "{PERM_CREATE_APP}"),
+            Self::DeleteApp { name } => write!(f, "{PERM_DELETE_APP}(`{name}`)"),
+            Self::InviteUsers {} => write!(f, "{PERM_INVITE_USERS}"),
+            Self::ReadApp { name } => write!(f, "{PERM_READ_APP}(`{name}`)"),
+            Self::UpdateApp { name } => write!(f, "{PERM_UPDATE_APP}(`{name}`)"),
         }
     }
 }
