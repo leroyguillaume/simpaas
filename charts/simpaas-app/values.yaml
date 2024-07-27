@@ -4,7 +4,7 @@ serviceAccount:
   automount: true
 
 ingress:
-  className: ""
+  className: simpaas-nginx
   annotations: {}
 
 common:

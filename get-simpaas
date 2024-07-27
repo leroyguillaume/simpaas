@@ -128,11 +128,12 @@ spec:
 EOF
 
 install_chart $ns_simpaas simpaas $repo_simpaas/simpaas-stack \
+  --set-json "grafana={\"grafana.ini\":{\"server\":{\"domain\":\"$SIMPAAS_DOMAIN\"}}}" \
   --set "simpaas.common.image.tag=$SIMPAAS_VERSION" \
+  --set-json "simpaas.ingress.annotations={\"cert-manager.io/cluster-issuer\":\"$issuer\"}" \
   --set simpaas.ingress.create=$ingress_create \
   --set "simpaas.ingress.domain=$SIMPAAS_DOMAIN" \
-  --set-json "simpaas.ingress.annotations={\"cert-manager.io/cluster-issuer\":\"$issuer\"}" \
-  --set-json "grafana={\"grafana.ini\":{\"server\":{\"domain\":\"$SIMPAAS_DOMAIN\"}}}" \
+  --set-json "simpaas.op.chartValues={\"ingress\":{\"annotations\":{\"cert-manager.io/cluster-issuer\":\"$issuer\"}}}" \
   "${set_smtp_env[@]}" \
   "${set_values[@]}"
 
