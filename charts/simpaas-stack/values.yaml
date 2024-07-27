@@ -53,7 +53,7 @@ smtp:
   readinessProbe: {}
 
 swaggerUi:
-  enabled: &swaggerUiEnabled false
+  enabled: &swaggerUiEnabled true
 
   replicas: 1
 
@@ -68,9 +68,7 @@ swaggerUi:
   podSecurityContext: {}
   securityContext: {}
 
-  env:
-  - name: BASE_URL
-    value: &swaggerUiPath /swagger-ui
+  env: []
   extraEnv: []
 
   resoures: {}
@@ -88,6 +86,9 @@ swaggerUi:
 
   livenessProbe: {}
   readinessProbe: {}
+
+  baseUrl: &swaggerUiPath /swagger-ui
+  apiUrl: ""
 
 grafana:
   enabled: &grafanaEnabled true

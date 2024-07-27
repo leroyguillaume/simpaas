@@ -12,11 +12,7 @@ smtp:
         key: password
 
 swaggerUi:
-  enabled: true
-
-  extraEnv:
-  - name: SWAGGER_JSON_URL
-    value: https://simpaas.k8s.orb.local/api/_doc
+  apiUrl: https://simpaas.k8s.orb.local/api/_doc
 
 grafana:
   grafana.ini:
@@ -33,6 +29,3 @@ simpaas:
 
   ingress:
     domain: *domain
-    additionalRules:
-      swagger-ui:
-        enabled: true

@@ -12,6 +12,9 @@ helm install simpaas simpaas/simpaas-stack
 ## Minimal configuration
 
 ```yaml
+swaggerUi:
+  apiUrl: https://simpaas.k8s.orb.local/api/_doc
+
 grafana:
   grafana.ini:
     server:
@@ -21,7 +24,3 @@ simpaas:
   ingress:
     domain: *domain
 ```
-
-## SwaggerUI
-
-If you enable feature `swaggerUi`, you need to set environment variable `SWAGGER_JSON_URL` to OpenAPI endpoint (`/_doc`).
