@@ -460,6 +460,7 @@ async fn create_invitation<J: JwtEncoder, K: KubeClient, P: PasswordEncoder>(
                 ..Default::default()
             },
             spec,
+            status: None,
         };
         ctx.kube.patch_invitation(&token, &invit).await?;
         info!("invitation created");

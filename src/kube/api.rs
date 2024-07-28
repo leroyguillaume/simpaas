@@ -3,17 +3,23 @@ use std::collections::HashSet;
 use k8s_openapi::api::{core::v1::Namespace, networking::v1::Ingress};
 use kube::{
     api::{DeleteParams, ListParams, Patch, PatchParams},
-    Api, Client,
+    runtime::events::{EventType, Recorder, Reporter},
+    Api, Client, Resource,
 };
 use regex::Regex;
+use serde_json::json;
 use tracing::{debug, instrument, warn};
 
 use crate::{
-    domain::{Action, App, Invitation, Permission, PermissionError, Role, Service, User},
+    domain::{
+        Action, App, Invitation, InvitationStatus, Permission, PermissionError, Role, Service, User,
+    },
     CARGO_PKG_NAME,
 };
 
-use super::{AppFilter, DomainUsage, KubeClient, Result};
+use super::{
+    AppFilter, DomainUsage, KubeClient, KubeEvent, KubeEventKind, KubeEventPublisher, Result,
+};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -201,7 +207,7 @@ impl KubeClient for ApiKubeClient {
         let api: Api<App> = Api::default_namespaced(self.0.clone());
         let params = PatchParams::apply(CARGO_PKG_NAME);
         debug!("patching app");
-        api.patch(name, &params, &Patch::Apply(&app)).await?;
+        api.patch(name, &params, &Patch::Apply(app)).await?;
         Ok(())
     }
 
@@ -210,7 +216,20 @@ impl KubeClient for ApiKubeClient {
         let api: Api<Invitation> = Api::default_namespaced(self.0.clone());
         let params = PatchParams::apply(CARGO_PKG_NAME);
         debug!("patching invitation");
-        api.patch(token, &params, &Patch::Apply(&invit)).await?;
+        api.patch(token, &params, &Patch::Apply(invit)).await?;
+        Ok(())
+    }
+
+    #[instrument(skip(self, token, status), fields(invit.token = token))]
+    async fn patch_invitation_status(&self, token: &str, status: &InvitationStatus) -> Result {
+        let api: Api<Invitation> = Api::default_namespaced(self.0.clone());
+        let params = PatchParams::default();
+        debug!("patching invitation status");
+        let status = json!({
+            "status": status,
+        });
+        api.patch_status(token, &params, &Patch::Merge(status))
+            .await?;
         Ok(())
     }
 
@@ -219,7 +238,7 @@ impl KubeClient for ApiKubeClient {
         let api: Api<User> = Api::default_namespaced(self.0.clone());
         let params = PatchParams::apply(CARGO_PKG_NAME);
         debug!("patching user");
-        api.patch(name, &params, &Patch::Apply(&user)).await?;
+        api.patch(name, &params, &Patch::Apply(user)).await?;
         Ok(())
     }
 
@@ -254,6 +273,42 @@ impl KubeClient for ApiKubeClient {
     }
 }
 
+pub struct ApiKubeEventPublisher {
+    client: Client,
+    reporter: Reporter,
+}
+
+impl ApiKubeEventPublisher {
+    pub fn new(client: Client, instance: Option<String>) -> Self {
+        Self {
+            client,
+            reporter: Reporter {
+                controller: CARGO_PKG_NAME.into(),
+                instance,
+            },
+        }
+    }
+
+    async fn publish(event: KubeEvent, recorder: Recorder) {
+        if let Err(err) = recorder.publish(event.into()).await {
+            warn!("failed to publish event: {err}");
+        }
+    }
+}
+
+impl KubeEventPublisher for ApiKubeEventPublisher {
+    #[instrument(skip(self, invit, event))]
+    async fn publish_invitation_event(&self, invit: &Invitation, event: KubeEvent) {
+        debug!("publishing invitation event");
+        let recorder = Recorder::new(
+            self.client.clone(),
+            self.reporter.clone(),
+            invit.object_ref(&()),
+        );
+        Self::publish(event, recorder).await;
+    }
+}
+
 impl From<Error> for super::Error {
     fn from(err: Error) -> Self {
         Self(Box::new(err))
@@ -275,5 +330,26 @@ impl From<PermissionError> for super::Error {
 impl From<regex::Error> for super::Error {
     fn from(err: regex::Error) -> Self {
         Error::Regex(err).into()
+    }
+}
+
+impl From<KubeEvent> for ::kube::runtime::events::Event {
+    fn from(event: KubeEvent) -> Self {
+        Self {
+            action: event.action.into(),
+            note: Some(event.note),
+            reason: event.reason.into(),
+            secondary: None,
+            type_: event.kind.into(),
+        }
+    }
+}
+
+impl From<KubeEventKind> for EventType {
+    fn from(kind: KubeEventKind) -> Self {
+        match kind {
+            KubeEventKind::Normal => Self::Normal,
+            KubeEventKind::Warn => Self::Warning,
+        }
     }
 }

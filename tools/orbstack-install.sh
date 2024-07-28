@@ -12,7 +12,7 @@ if ! ./tools/gen-crds.sh; then
 fi
 
 if [ -f .local/values.yaml ]; then
-  set_values=(--set-values .local/values.yaml)
+  set_values=(--values .local/values.yaml)
 fi
 
 helm upgrade \

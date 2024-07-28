@@ -36,10 +36,20 @@ spec:
             - roles
             - to
             type: object
+          status:
+            nullable: true
+            properties:
+              emailSent:
+                description: True if email was sent.
+                type: boolean
+            required:
+            - emailSent
+            type: object
         required:
         - spec
         title: Invitation
         type: object
     served: true
     storage: true
-    subresources: {}
+    subresources:
+      status: {}

@@ -12,7 +12,7 @@ use deploy::helm::{HelmDeployer, HelmDeployerArgs};
 use domain::{App, Invitation, Role, User};
 use helm::cli::{CliHelmClient, CliHelmClientArgs};
 use jwt::default::{DefaultJwtEncoder, DefaultJwtEncoderArgs};
-use kube::api::ApiKubeClient;
+use kube::api::{ApiKubeClient, ApiKubeEventPublisher};
 use mail::default::{DefaultMailSender, DefaultMailSenderArgs};
 use op::{start_op, OpContext};
 use opentelemetry::KeyValue;
@@ -71,6 +71,7 @@ async fn main() -> anyhow::Result<()> {
                 deployer: HelmDeployer::new(args.deployer, helm),
                 kube: ApiKubeClient::new(kube.clone()),
                 mail_sender: DefaultMailSender::new(args.mail, args.webapp_url)?,
+                publisher: ApiKubeEventPublisher::new(kube.clone(), args.instance),
                 requeue_delay: Duration::from_secs(args.requeue_delay),
             };
             start_op(kube, ctx).await
@@ -207,6 +208,8 @@ struct OpArgs {
     deployer: HelmDeployerArgs,
     #[command(flatten)]
     helm: CliHelmClientArgs,
+    #[arg(long, env, long_help = "Name of current instance")]
+    instance: Option<String>,
     #[command(flatten)]
     mail: DefaultMailSenderArgs,
     #[arg(
@@ -230,6 +233,7 @@ impl Default for OpArgs {
         Self {
             deployer: Default::default(),
             helm: Default::default(),
+            instance: None,
             mail: DefaultMailSenderArgs::default(),
             requeue_delay: 10,
             webapp_url: "http://localhost:3000".into(),

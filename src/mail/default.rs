@@ -28,7 +28,6 @@ pub struct DefaultMailSenderArgs {
         long = "smtp-from",
         env = "SMTP_FROM",
         name = "SMTP_FROM",
-        default_value = "noreply@simpaas.gleroy.dev",
         long_help = "Email address used to send mail"
     )]
     pub from: String,

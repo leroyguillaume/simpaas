@@ -175,7 +175,8 @@ impl Display for Permission {
     kind = "Invitation",
     doc = "SimPaaS user invitation",
     plural = "invitations",
-    namespaced
+    namespaced,
+    status = "InvitationStatus"
 )]
 #[serde(rename_all = "camelCase")]
 pub struct InvitationSpec {
@@ -185,6 +186,13 @@ pub struct InvitationSpec {
     pub roles: BTreeSet<String>,
     /// Invited user email.
     pub to: String,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, JsonSchema, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InvitationStatus {
+    /// True if email was sent.
+    pub email_sent: bool,
 }
 
 #[derive(Clone, CustomResource, Debug, Deserialize, Eq, PartialEq, JsonSchema, Serialize)]
