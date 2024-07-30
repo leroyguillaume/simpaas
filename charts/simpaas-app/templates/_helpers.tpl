@@ -26,6 +26,7 @@ app.kubernetes.io/version: {{ .Service.tag | quote }}
 app.kubernetes.io/name: {{ include "simpaas-app.service.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 app.kubernetes.io/component: {{ .Service.name }}
+simpaas.gleroy.dev/service: {{ .Service.name }}
 {{- end }}
 
 {{- define "simpaas-app.serviceAccountName" -}}

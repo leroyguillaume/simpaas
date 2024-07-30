@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeSet, HashSet},
+    collections::{BTreeMap, BTreeSet, HashSet},
     fmt::{Display, Formatter},
 };
 
@@ -53,7 +53,8 @@ impl Display for Action<'_> {
     kind = "App",
     doc = "SimPaaS application",
     plural = "apps",
-    namespaced
+    namespaced,
+    status = "AppStatus"
 )]
 #[serde(rename_all = "camelCase")]
 pub struct AppSpec {
@@ -66,6 +67,13 @@ pub struct AppSpec {
     /// Helm chart values.
     #[serde(default)]
     pub values: Map<String, Value>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, JsonSchema, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum AppStatus {
+    Deployed(BTreeMap<String, ServiceStatus>),
+    WaitingForDeploy {},
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, JsonSchema, Serialize, Validate)]
@@ -236,6 +244,19 @@ pub struct Service {
     /// Helm chart values.
     #[serde(default)]
     pub values: Map<String, Value>,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, JsonSchema, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ServiceStatus {
+    /// When at least one instance is stopped.
+    Degraded,
+    /// When all instances are running.
+    Running,
+    /// When the instances are starting.
+    Starting,
+    /// When all instances are stopped.
+    Stopped,
 }
 
 #[derive(Clone, CustomResource, Debug, Deserialize, Eq, PartialEq, JsonSchema, Serialize)]

@@ -3,11 +3,16 @@ use std::collections::HashSet;
 use futures::Future;
 use regex::Regex;
 
-use crate::domain::{Action, App, Invitation, InvitationStatus, Permission, Role, Service, User};
+use crate::domain::{
+    Action, App, AppStatus, Invitation, InvitationStatus, Permission, Role, Service, User,
+};
 
 pub mod api;
 
 pub const FINALIZER: &str = "simpaas.gleroy.dev/finalizer";
+
+pub const LABEL_APP: &str = "simpaas.gleroy.dev/app";
+pub const LABEL_SERVICE: &str = "simpaas.gleroy.dev/service";
 
 pub type Result<T = ()> = std::result::Result<T, Error>;
 
@@ -42,6 +47,18 @@ pub enum KubeEventKind {
     Warn,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ServicePod {
+    pub name: String,
+    pub status: ServicePodStatus,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ServicePodStatus {
+    Running,
+    Stopped,
+}
+
 pub trait KubeClient: Send + Sync {
     fn delete_app(&self, name: &str) -> impl Future<Output = Result> + Send;
 
@@ -73,7 +90,19 @@ pub trait KubeClient: Send + Sync {
         user: &User,
     ) -> impl Future<Output = Result<Vec<App>>> + Send;
 
+    fn list_service_pods(
+        &self,
+        app: &str,
+        service: &str,
+    ) -> impl Future<Output = Result<Vec<ServicePod>>> + Send;
+
     fn patch_app(&self, name: &str, app: &App) -> impl Future<Output = Result> + Send;
+
+    fn patch_app_status(
+        &self,
+        name: &str,
+        status: &AppStatus,
+    ) -> impl Future<Output = Result> + Send;
 
     fn patch_invitation(
         &self,
@@ -102,6 +131,8 @@ pub trait KubeClient: Send + Sync {
 }
 
 pub trait KubeEventPublisher: Send + Sync {
+    fn publish_app_event(&self, app: &App, event: KubeEvent) -> impl Future<Output = ()> + Send;
+
     fn publish_invitation_event(
         &self,
         invit: &Invitation,

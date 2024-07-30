@@ -6,6 +6,10 @@ use crate::{api::PATH_JOIN, domain::Invitation};
 
 use super::{MailSender, Result};
 
+const DEFAULT_FROM: &str = "noreply@127.0.0.1";
+const DEFAULT_HOST: &str = "127.0.0.1";
+const DEFAULT_PORT: u16 = 25;
+
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("liquid error: {0}")]
@@ -28,6 +32,7 @@ pub struct DefaultMailSenderArgs {
         long = "smtp-from",
         env = "SMTP_FROM",
         name = "SMTP_FROM",
+        default_value = DEFAULT_FROM,
         long_help = "Email address used to send mail"
     )]
     pub from: String,
@@ -35,7 +40,7 @@ pub struct DefaultMailSenderArgs {
         long = "smtp-host",
         env = "SMTP_HOST",
         name = "SMTP_HOST",
-        default_value = "127.0.0.1",
+        default_value = DEFAULT_HOST,
         long_help = "SMTP server address"
     )]
     pub host: String,
@@ -43,7 +48,6 @@ pub struct DefaultMailSenderArgs {
         long = "smtp-implicit-tls",
         env = "SMTP_IMPLICIT_TLS",
         name = "SMTP_IMPLICIT_TLS",
-        default_value_t = false,
         long_help = "Enable SMTP implicit TLS"
     )]
     pub implicit_tls: bool,
@@ -58,7 +62,7 @@ pub struct DefaultMailSenderArgs {
         long = "smtp-port",
         env = "SMTP_PORT",
         name = "SMTP_PORT",
-        default_value_t = 25,
+        default_value_t = DEFAULT_PORT,
         long_help = "SMTP server port"
     )]
     pub port: u16,
@@ -66,7 +70,6 @@ pub struct DefaultMailSenderArgs {
         long = "smtp-tls",
         env = "SMTP_TLS",
         name = "SMTP_TLS",
-        default_value_t = false,
         long_help = "Enable SMTP TLS"
     )]
     pub tls: bool,
@@ -82,11 +85,11 @@ pub struct DefaultMailSenderArgs {
 impl Default for DefaultMailSenderArgs {
     fn default() -> Self {
         Self {
-            from: "noreply@simpaas.gleroy.dev".into(),
-            host: "127.0.0.1".into(),
+            from: DEFAULT_FROM.into(),
+            host: DEFAULT_HOST.into(),
             implicit_tls: false,
             password: None,
-            port: 25,
+            port: DEFAULT_PORT,
             tls: false,
             user: None,
         }

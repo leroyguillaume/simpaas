@@ -6,6 +6,9 @@ use crate::{cmd::CommandRunner, domain::App};
 
 use super::{HelmClient, Result};
 
+const DEFAULT_BIN: &str = "helm";
+const DEFAULT_CHART_PATH: &str = "charts/simpaas-app";
+
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("{0}")]
@@ -24,14 +27,14 @@ pub struct CliHelmClientArgs {
         long = "helm-bin",
         env = "HELM_BIN",
         name = "HELM_BIN",
-        default_value = "helm",
+        default_value = DEFAULT_BIN,
         long_help = "Helm binary to use"
     )]
     pub bin: String,
     #[arg(
         long,
         env,
-        default_value = "charts/simpaas-app",
+        default_value = DEFAULT_CHART_PATH,
         long_help = "Path to built-in simpaas-app chart"
     )]
     pub chart_path: PathBuf,
@@ -40,8 +43,8 @@ pub struct CliHelmClientArgs {
 impl Default for CliHelmClientArgs {
     fn default() -> Self {
         Self {
-            bin: "helm".into(),
-            chart_path: "charts/simpaas-app".into(),
+            bin: DEFAULT_BIN.into(),
+            chart_path: DEFAULT_CHART_PATH.into(),
         }
     }
 }
