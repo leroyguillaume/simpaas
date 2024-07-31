@@ -162,6 +162,7 @@ op:
   smtp:
     host: ""
     port: 25
+    from: ""
 
   webappUrl: ""
 

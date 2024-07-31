@@ -62,6 +62,8 @@ spec:
           value: {{ default (printf "%s-smtp" .Release.Name) .Values.op.smtp.host }}
         - name: SMTP_PORT
           value: {{ .Values.op.smtp.port | quote }}
+        - name: SMTP_FROM
+          value: {{ default (printf "noreply@%s" .Values.ingress.domain) .Values.op.smtp.from }}
         {{- if .Values.op.webappUrl }}
         - name: WEBAPP_URL
           value: {{ .Values.op.webappUrl }}

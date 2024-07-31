@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use futures::Future;
 use regex::Regex;
 
-use crate::domain::{Action, App, Invitation, Permission, Role, Service, User};
+use crate::domain::{Action, App, Invitation, InvitationStatus, Permission, Role, Service, User};
 
 pub mod api;
 
@@ -26,6 +26,20 @@ pub struct DomainUsage {
     pub app: Option<String>,
     /// Domain.
     pub domain: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct KubeEvent {
+    pub action: &'static str,
+    pub kind: KubeEventKind,
+    pub note: String,
+    pub reason: &'static str,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum KubeEventKind {
+    Normal,
+    Warn,
 }
 
 pub trait KubeClient: Send + Sync {
@@ -67,6 +81,12 @@ pub trait KubeClient: Send + Sync {
         invit: &Invitation,
     ) -> impl Future<Output = Result> + Send;
 
+    fn patch_invitation_status(
+        &self,
+        token: &str,
+        status: &InvitationStatus,
+    ) -> impl Future<Output = Result> + Send;
+
     fn patch_user(&self, name: &str, user: &User) -> impl Future<Output = Result> + Send;
 
     fn user_has_permission(
@@ -79,4 +99,12 @@ pub trait KubeClient: Send + Sync {
         &self,
         user: &User,
     ) -> impl Future<Output = Result<HashSet<Permission>>> + Send;
+}
+
+pub trait KubeEventPublisher: Send + Sync {
+    fn publish_invitation_event(
+        &self,
+        invit: &Invitation,
+        event: KubeEvent,
+    ) -> impl Future<Output = ()> + Send;
 }

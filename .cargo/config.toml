@@ -2,4 +2,5 @@
 COOKIE_HTTP_ONLY_DISABLED = "true"
 COOKIE_SECURE_DISABLED = "true"
 LOG_FILTER = "simpaas=debug,warn"
+SMTP_FROM = "noreply@localhost"
 SMTP_HOST = "simpaas-smtp.simpaas.svc.cluster.local"
