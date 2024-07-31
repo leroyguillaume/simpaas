@@ -1,7 +1,6 @@
 use std::{
     io::{stderr, stdout},
     net::{Ipv4Addr, SocketAddr, SocketAddrV4},
-    time::Duration,
 };
 
 use ::kube::CustomResourceExt;
@@ -68,11 +67,11 @@ async fn main() -> anyhow::Result<()> {
             let kube = ::kube::Client::try_default().await?;
             let helm = CliHelmClient::new(args.helm, DefaultCommandRunner);
             let ctx = OpContext {
+                delays: args.delays.into(),
                 deployer: HelmDeployer::new(args.deployer, helm),
                 kube: ApiKubeClient::new(kube.clone()),
                 mail_sender: DefaultMailSender::new(args.mail, args.webapp_url)?,
                 publisher: ApiKubeEventPublisher::new(kube.clone(), args.instance),
-                requeue_delay: Duration::from_secs(args.requeue_delay),
             };
             start_op(kube, ctx).await
         }
@@ -80,6 +79,14 @@ async fn main() -> anyhow::Result<()> {
 }
 
 const CARGO_PKG_NAME: &str = env!("CARGO_PKG_NAME");
+
+const DEFAULT_APP_STATUS_DELAY: u64 = 30;
+const DEFAULT_BIND_ADDR: SocketAddr =
+    SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(0, 0, 0, 0), 8080));
+const DEFAULT_DOMAIN: &str = "127.0.0.1";
+const DEFAULT_RETRY_DELAY: u64 = 10;
+const DEFAULT_ROOT_PATH: &str = "/";
+const DEFAULT_WEBAPP_URL: &str = "http://localhost:3000";
 
 #[derive(Clone, Debug, Eq, Parser, PartialEq)]
 #[command(version)]
@@ -146,7 +153,7 @@ struct ApiArgs {
     #[arg(
         long,
         env,
-        default_value = "0.0.0.0:8080",
+        default_value_t = DEFAULT_BIND_ADDR,
         long_help = "Address on which listen requests"
     )]
     bind_addr: SocketAddr,
@@ -154,17 +161,17 @@ struct ApiArgs {
     cookie: CookieArgs,
     #[command(flatten)]
     jwt: DefaultJwtEncoderArgs,
-    #[arg(long, env, default_value = "/", long_help = "Root endpoints path")]
+    #[arg(long, env, default_value = DEFAULT_ROOT_PATH, long_help = "Root endpoints path")]
     root_path: String,
 }
 
 impl Default for ApiArgs {
     fn default() -> Self {
         Self {
-            bind_addr: SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(0, 0, 0, 0), 8080)),
+            bind_addr: DEFAULT_BIND_ADDR,
             cookie: Default::default(),
             jwt: DefaultJwtEncoderArgs::default(),
-            root_path: "/".into(),
+            root_path: DEFAULT_ROOT_PATH.into(),
         }
     }
 }
@@ -174,7 +181,7 @@ struct CookieArgs {
     #[arg(
         long,
         env,
-        default_value = "127.0.0.1",
+        default_value = DEFAULT_DOMAIN,
         long_help = "Domain used to create cookies"
     )]
     domain: String,
@@ -195,7 +202,7 @@ struct CookieArgs {
 impl Default for CookieArgs {
     fn default() -> Self {
         Self {
-            domain: "127.0.0.1".into(),
+            domain: DEFAULT_DOMAIN.into(),
             http_only_disabled: false,
             secure_disabled: false,
         }
@@ -204,6 +211,8 @@ impl Default for CookieArgs {
 
 #[derive(clap::Args, Clone, Debug, Eq, PartialEq)]
 struct OpArgs {
+    #[command(flatten)]
+    delays: DelayArgs,
     #[command(flatten)]
     deployer: HelmDeployerArgs,
     #[command(flatten)]
@@ -215,14 +224,7 @@ struct OpArgs {
     #[arg(
         long,
         env,
-        default_value_t = 10,
-        long_help = "Number of seconds between CRD check"
-    )]
-    requeue_delay: u64,
-    #[arg(
-        long,
-        env,
-        default_value = "http://localhost:3000",
+        default_value = DEFAULT_WEBAPP_URL,
         long_help = "WebApp URL"
     )]
     webapp_url: String,
@@ -231,12 +233,41 @@ struct OpArgs {
 impl Default for OpArgs {
     fn default() -> Self {
         Self {
+            delays: Default::default(),
             deployer: Default::default(),
             helm: Default::default(),
             instance: None,
             mail: DefaultMailSenderArgs::default(),
-            requeue_delay: 10,
-            webapp_url: "http://localhost:3000".into(),
+            webapp_url: DEFAULT_WEBAPP_URL.into(),
+        }
+    }
+}
+
+#[derive(clap::Args, Clone, Debug, Eq, PartialEq)]
+struct DelayArgs {
+    #[arg(
+        long = "app-status-delay",
+        env = "APP_STATUS_DELAY",
+        name = "APP_STATUS_DELAY",
+        default_value_t = DEFAULT_APP_STATUS_DELAY,
+        long_help = "Number of seconds between check app status"
+    )]
+    app_status: u64,
+    #[arg(
+        long = "retry-delay",
+        env = "RETRY_DELAY",
+        name = "RETRY_DELAY",
+        default_value_t = DEFAULT_RETRY_DELAY,
+        long_help = "Number of seconds to wait after a failure"
+    )]
+    retry: u64,
+}
+
+impl Default for DelayArgs {
+    fn default() -> Self {
+        Self {
+            app_status: DEFAULT_APP_STATUS_DELAY,
+            retry: DEFAULT_RETRY_DELAY,
         }
     }
 }

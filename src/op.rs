@@ -1,4 +1,4 @@
-use std::{sync::Arc, time::Duration};
+use std::{collections::BTreeMap, sync::Arc, time::Duration};
 
 use futures::{Future, StreamExt};
 use kube::{
@@ -10,14 +10,14 @@ use kube::{
     Api,
 };
 use tokio::{sync::broadcast::channel, task::JoinSet};
-use tracing::{debug, error, info, info_span, Instrument};
+use tracing::{debug, error, info, info_span, warn, Instrument};
 
 use crate::{
     deploy::Deployer,
-    domain::{App, Invitation, InvitationStatus},
-    kube::{KubeClient, KubeEvent, KubeEventKind, KubeEventPublisher, FINALIZER},
+    domain::{App, AppStatus, Invitation, InvitationStatus, ServiceStatus},
+    kube::{KubeClient, KubeEvent, KubeEventKind, KubeEventPublisher, ServicePodStatus, FINALIZER},
     mail::MailSender,
-    SignalListener,
+    DelayArgs, SignalListener,
 };
 
 pub type Result<T = ()> = std::result::Result<T, Error>;
@@ -46,12 +46,27 @@ pub enum Error {
     NoName,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Delays {
+    app_status: Duration,
+    retry: Duration,
+}
+
+impl From<DelayArgs> for Delays {
+    fn from(args: DelayArgs) -> Self {
+        Self {
+            app_status: Duration::from_secs(args.app_status),
+            retry: Duration::from_secs(args.retry),
+        }
+    }
+}
+
 pub struct OpContext<D: Deployer, K: KubeClient, M: MailSender, P: KubeEventPublisher> {
+    pub delays: Delays,
     pub deployer: D,
     pub kube: K,
     pub mail_sender: M,
     pub publisher: P,
-    pub requeue_delay: Duration,
 }
 
 pub async fn start_op<
@@ -123,7 +138,7 @@ fn on_error<D: Deployer, K: KubeClient, M: MailSender, P: KubeEventPublisher, R>
     _err: &::kube::Error,
     ctx: Arc<OpContext<D, K, M, P>>,
 ) -> Action {
-    Action::requeue(ctx.requeue_delay)
+    Action::requeue(ctx.delays.retry)
 }
 
 fn log_controller_error<Q: std::error::Error + 'static, R: std::error::Error + 'static>(
@@ -155,7 +170,16 @@ async fn reconcile_app<D: Deployer, K: KubeClient, M: MailSender, P: KubeEventPu
             if let Some(finalizers) = &app.metadata.finalizers {
                 if finalizers.iter().any(|finalizer| finalizer == FINALIZER) {
                     let mut app = app.as_ref().clone();
-                    ctx.deployer.undeploy(name, &app, &ctx.kube).await?;
+                    publishing_event(
+                        ctx.deployer.undeploy(name, &app, &ctx.kube),
+                        "Undeploying",
+                        "Undeployed",
+                        "Undeploying".into(),
+                        |_| "Successfully undeployed".into(),
+                        |err| format!("Failed to undeploy: {err}"),
+                        |event| ctx.publisher.publish_app_event(&app, event),
+                    )
+                    .await?;
                     let mut finalizers = finalizers.clone();
                     finalizers.retain(|finalizer| finalizer != FINALIZER);
                     app.metadata = ObjectMeta {
@@ -167,9 +191,26 @@ async fn reconcile_app<D: Deployer, K: KubeClient, M: MailSender, P: KubeEventPu
                 }
             }
         } else {
-            ctx.deployer.deploy(name, &app, &ctx.kube).await?;
+            match app.status {
+                Some(AppStatus::Deployed(_)) => {
+                    update_service_statuses(name, &app, &ctx.kube, &ctx.publisher).await?;
+                }
+                Some(AppStatus::WaitingForDeploy {}) | None => {
+                    publishing_event(
+                        ctx.deployer.deploy(name, &app, &ctx.kube),
+                        "Deploying",
+                        "Deployed",
+                        "Deploying".into(),
+                        |_| "Successfully deployed".into(),
+                        |err| format!("Failed to deploy: {err}"),
+                        |event| ctx.publisher.publish_app_event(&app, event),
+                    )
+                    .await?;
+                    update_service_statuses(name, &app, &ctx.kube, &ctx.publisher).await?;
+                }
+            }
         }
-        Ok(Action::await_change())
+        Ok(Action::requeue(ctx.delays.app_status))
     }
     .instrument(span)
     .await
@@ -217,6 +258,49 @@ async fn send_invitation<K: KubeClient, M: MailSender, P: KubeEventPublisher>(
     .await?;
     let status = InvitationStatus { email_sent: true };
     kube.patch_invitation_status(token, &status).await?;
+    Ok(())
+}
+
+async fn update_service_statuses<K: KubeClient, P: KubeEventPublisher>(
+    name: &str,
+    app: &App,
+    kube: &K,
+    publisher: &P,
+) -> Result {
+    let monitor = async {
+        let mut statuses = BTreeMap::new();
+        for service in &app.spec.services {
+            let pods = kube.list_service_pods(name, &service.name).await?;
+            let mut stopped = 0;
+            for pod in &pods {
+                if let ServicePodStatus::Stopped = pod.status {
+                    warn!(pod.name, "pod is stopped");
+                    stopped += 1;
+                }
+            }
+            let status = if stopped == 0 {
+                ServiceStatus::Running
+            } else if stopped == pods.len() {
+                ServiceStatus::Stopped
+            } else {
+                ServiceStatus::Degraded
+            };
+            statuses.insert(service.name.clone(), status);
+        }
+        Ok(statuses) as Result<BTreeMap<String, ServiceStatus>>
+    };
+    let statuses = publishing_event(
+        monitor,
+        "Monitoring",
+        "Monitored",
+        "Checking probes".into(),
+        |_| "Probes successfully checked".into(),
+        |err| format!("Failed to check service probes: {err}"),
+        |event| publisher.publish_app_event(app, event),
+    )
+    .await?;
+    kube.patch_app_status(name, &AppStatus::Deployed(statuses))
+        .await?;
     Ok(())
 }
 

@@ -103,10 +103,31 @@ spec:
             - owner
             - services
             type: object
+          status:
+            nullable: true
+            oneOf:
+            - required:
+              - deployed
+            - required:
+              - waitingForDeploy
+            properties:
+              deployed:
+                additionalProperties:
+                  enum:
+                  - degraded
+                  - running
+                  - starting
+                  - stopped
+                  type: string
+                type: object
+              waitingForDeploy:
+                type: object
+            type: object
         required:
         - spec
         title: App
         type: object
     served: true
     storage: true
-    subresources: {}
+    subresources:
+      status: {}

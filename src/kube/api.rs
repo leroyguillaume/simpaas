@@ -1,6 +1,9 @@
 use std::collections::HashSet;
 
-use k8s_openapi::api::{core::v1::Namespace, networking::v1::Ingress};
+use k8s_openapi::api::{
+    core::v1::{Namespace, Pod, PodStatus},
+    networking::v1::Ingress,
+};
 use kube::{
     api::{DeleteParams, ListParams, Patch, PatchParams},
     runtime::events::{EventType, Recorder, Reporter},
@@ -12,28 +15,32 @@ use tracing::{debug, instrument, warn};
 
 use crate::{
     domain::{
-        Action, App, Invitation, InvitationStatus, Permission, PermissionError, Role, Service, User,
+        Action, App, AppStatus, Invitation, InvitationStatus, Permission, PermissionError, Role,
+        Service, User,
     },
     CARGO_PKG_NAME,
 };
 
 use super::{
     AppFilter, DomainUsage, KubeClient, KubeEvent, KubeEventKind, KubeEventPublisher, Result,
+    ServicePod, ServicePodStatus, LABEL_APP, LABEL_SERVICE,
 };
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("{0}")]
-    Permission(
-        #[from]
-        #[source]
-        PermissionError,
-    ),
-    #[error("{0}")]
     Kube(
         #[from]
         #[source]
         ::kube::Error,
+    ),
+    #[error("failed to map kubernetes resource")]
+    Mapping,
+    #[error("{0}")]
+    Permission(
+        #[from]
+        #[source]
+        PermissionError,
     ),
     #[error("regex error: {0}")]
     Regex(
@@ -202,12 +209,38 @@ impl KubeClient for ApiKubeClient {
         Ok(apps)
     }
 
+    #[instrument(skip(self, app, service), fields(app.name = app, service.name = service))]
+    async fn list_service_pods(&self, app: &str, service: &str) -> Result<Vec<ServicePod>> {
+        let api: Api<Pod> = Api::namespaced(self.0.clone(), app);
+        let params =
+            ListParams::default().labels(&format!("{LABEL_APP}={app},{LABEL_SERVICE}={service}"));
+        debug!("listing pods");
+        api.list(&params)
+            .await?
+            .into_iter()
+            .map(|pod| pod.try_into().map_err(super::Error::from))
+            .collect()
+    }
+
     #[instrument(skip(self, name, app), fields(app.name = name))]
     async fn patch_app(&self, name: &str, app: &App) -> Result {
         let api: Api<App> = Api::default_namespaced(self.0.clone());
         let params = PatchParams::apply(CARGO_PKG_NAME);
         debug!("patching app");
         api.patch(name, &params, &Patch::Apply(app)).await?;
+        Ok(())
+    }
+
+    #[instrument(skip(self, name, status), fields(app.name = name))]
+    async fn patch_app_status(&self, name: &str, status: &AppStatus) -> Result {
+        let api: Api<App> = Api::default_namespaced(self.0.clone());
+        let params = PatchParams::default();
+        debug!("patching app status");
+        let status = json!({
+            "status": status,
+        });
+        api.patch_status(name, &params, &Patch::Merge(status))
+            .await?;
         Ok(())
     }
 
@@ -297,6 +330,17 @@ impl ApiKubeEventPublisher {
 }
 
 impl KubeEventPublisher for ApiKubeEventPublisher {
+    #[instrument(skip(self, app, event))]
+    async fn publish_app_event(&self, app: &App, event: KubeEvent) {
+        debug!("publishing app event");
+        let recorder = Recorder::new(
+            self.client.clone(),
+            self.reporter.clone(),
+            app.object_ref(&()),
+        );
+        Self::publish(event, recorder).await;
+    }
+
     #[instrument(skip(self, invit, event))]
     async fn publish_invitation_event(&self, invit: &Invitation, event: KubeEvent) {
         debug!("publishing invitation event");
@@ -350,6 +394,32 @@ impl From<KubeEventKind> for EventType {
         match kind {
             KubeEventKind::Normal => Self::Normal,
             KubeEventKind::Warn => Self::Warning,
+        }
+    }
+}
+
+impl TryFrom<Pod> for ServicePod {
+    type Error = Error;
+
+    fn try_from(pod: Pod) -> std::result::Result<Self, Self::Error> {
+        Ok(Self {
+            name: pod.metadata.name.ok_or_else(|| {
+                debug!("pod doesn't have name");
+                Error::Mapping
+            })?,
+            status: pod
+                .status
+                .map(ServicePodStatus::from)
+                .unwrap_or(ServicePodStatus::Stopped),
+        })
+    }
+}
+
+impl From<PodStatus> for ServicePodStatus {
+    fn from(status: PodStatus) -> Self {
+        match status.phase.as_deref() {
+            Some("Running") => Self::Running,
+            _ => Self::Stopped,
         }
     }
 }

@@ -411,6 +411,7 @@ async fn create_app<J: JwtEncoder, K: KubeClient, P: PasswordEncoder>(
                 ..Default::default()
             },
             spec,
+            status: None,
         };
         ctx.kube.patch_app(&req.name, &app).await?;
         info!("app created");
@@ -684,6 +685,7 @@ async fn update_app<J: JwtEncoder, K: KubeClient, P: PasswordEncoder>(
                 values: req.values,
                 ..app.spec
             },
+            status: app.status,
         };
         ctx.kube.patch_app(&name, &app).await?;
         info!("app updated");

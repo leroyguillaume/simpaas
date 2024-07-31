@@ -16,6 +16,9 @@ use crate::domain::UserSpec;
 
 use super::{Jwt, JwtEncoder, Result};
 
+const DEFAULT_PRIVKEY: &str = "etc/privkey.pem";
+const DEFAULT_VALIDITY: u32 = 24 * 60 * 60;
+
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("{0}")]
@@ -41,7 +44,7 @@ pub struct DefaultJwtEncoderArgs {
         env = "JWT_PRIVKEY",
         name = "JWT_PRIVKEY",
         long_help = "Path to private key used to sign JWT",
-        default_value = "etc/privkey.pem"
+        default_value = DEFAULT_PRIVKEY
     )]
     pub privkey: PathBuf,
     #[arg(
@@ -49,7 +52,7 @@ pub struct DefaultJwtEncoderArgs {
         env = "JWT_VALIDITY",
         name = "JWT_VALIDITY",
         long_help = "Number of seconds during which a JWT is valid",
-        default_value_t = 24 * 60 * 60,
+        default_value_t = DEFAULT_VALIDITY,
     )]
     pub validity: u32,
 }
@@ -57,8 +60,8 @@ pub struct DefaultJwtEncoderArgs {
 impl Default for DefaultJwtEncoderArgs {
     fn default() -> Self {
         Self {
-            privkey: "etc/privkey.pem".into(),
-            validity: 24 * 60 * 60,
+            privkey: DEFAULT_PRIVKEY.into(),
+            validity: DEFAULT_VALIDITY,
         }
     }
 }
