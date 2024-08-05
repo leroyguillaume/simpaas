@@ -3,6 +3,8 @@ use tracing::{debug, instrument};
 
 use super::{Error, PasswordEncoder, Result};
 
+// BCryptPasswordEncoder
+
 pub struct BcryptPasswordEncoder;
 
 impl PasswordEncoder for BcryptPasswordEncoder {
@@ -18,6 +20,8 @@ impl PasswordEncoder for BcryptPasswordEncoder {
         bcrypt::verify(password, hash).map_err(Error::from)
     }
 }
+
+// Error
 
 impl From<BcryptError> for Error {
     fn from(err: BcryptError) -> Self {

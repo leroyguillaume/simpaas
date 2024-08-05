@@ -6,8 +6,12 @@ use crate::{cmd::CommandRunner, domain::App};
 
 use super::{HelmClient, Result};
 
+// Defaults
+
 const DEFAULT_BIN: &str = "helm";
 const DEFAULT_CHART_PATH: &str = "charts/simpaas-app";
+
+// Errors
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -21,8 +25,10 @@ pub enum Error {
     InvalidUnicode,
 }
 
+// Data structs
+
 #[derive(clap::Args, Clone, Debug, Eq, PartialEq)]
-pub struct CliHelmClientArgs {
+pub struct DefaultHelmClientArgs {
     #[arg(
         long = "helm-bin",
         env = "HELM_BIN",
@@ -40,7 +46,7 @@ pub struct CliHelmClientArgs {
     pub chart_path: PathBuf,
 }
 
-impl Default for CliHelmClientArgs {
+impl Default for DefaultHelmClientArgs {
     fn default() -> Self {
         Self {
             bin: DEFAULT_BIN.into(),
@@ -49,18 +55,20 @@ impl Default for CliHelmClientArgs {
     }
 }
 
-pub struct CliHelmClient<R: CommandRunner> {
-    args: CliHelmClientArgs,
+// DefaultHelmClient
+
+pub struct DefaultHelmClient<R: CommandRunner> {
+    args: DefaultHelmClientArgs,
     runner: R,
 }
 
-impl<R: CommandRunner> CliHelmClient<R> {
-    pub fn new(args: CliHelmClientArgs, runner: R) -> Self {
+impl<R: CommandRunner> DefaultHelmClient<R> {
+    pub fn new(args: DefaultHelmClientArgs, runner: R) -> Self {
         Self { args, runner }
     }
 }
 
-impl<R: CommandRunner> HelmClient for CliHelmClient<R> {
+impl<R: CommandRunner> HelmClient for DefaultHelmClient<R> {
     #[instrument("helm_uninstall", skip(self, name, app), fields(app.name = name, app.namespace = app.spec.namespace))]
     async fn uninstall(&self, name: &str, app: &App) -> Result {
         debug!("running helm uninstall");
@@ -101,6 +109,8 @@ impl<R: CommandRunner> HelmClient for CliHelmClient<R> {
         Ok(())
     }
 }
+
+// super::Error
 
 impl From<Error> for super::Error {
     fn from(err: Error) -> Self {

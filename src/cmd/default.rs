@@ -5,6 +5,8 @@ use tracing::{debug, error, instrument, Level};
 
 use super::{CommandRunner, Error, Result};
 
+// Macros
+
 macro_rules! log_output {
     ($lvl:ident, $cmd:expr, $output:expr) => {{
         let output = String::from_utf8_lossy(&$output);
@@ -13,6 +15,8 @@ macro_rules! log_output {
         }
     }};
 }
+
+// DefaultCommandRunner
 
 pub struct DefaultCommandRunner;
 

@@ -26,6 +26,8 @@ use super::{
     ServicePod, ServicePodStatus, LABEL_APP, LABEL_SERVICE,
 };
 
+// Errors
+
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("{0}")]
@@ -50,15 +52,17 @@ pub enum Error {
     ),
 }
 
-pub struct ApiKubeClient(Client);
+// DefaultKubeClient
 
-impl ApiKubeClient {
+pub struct DefaultKubeClient(Client);
+
+impl DefaultKubeClient {
     pub fn new(client: Client) -> Self {
         Self(client)
     }
 }
 
-impl KubeClient for ApiKubeClient {
+impl KubeClient for DefaultKubeClient {
     #[instrument(skip(self, name), fields(app.name = name))]
     async fn delete_app(&self, name: &str) -> Result {
         let api: Api<App> = Api::default_namespaced(self.0.clone());
@@ -275,7 +279,7 @@ impl KubeClient for ApiKubeClient {
         Ok(())
     }
 
-    #[instrument(skip(self, user, action), fields(%action))]
+    #[instrument(skip(self, user))]
     async fn user_has_permission(&self, user: &User, action: Action<'_>) -> Result<bool> {
         for role in &user.spec.roles {
             let role = self.get_role(role).await?;
@@ -306,12 +310,14 @@ impl KubeClient for ApiKubeClient {
     }
 }
 
-pub struct ApiKubeEventPublisher {
+// DefaultKubeEventPublisher
+
+pub struct DefaultKubeEventPublisher {
     client: Client,
     reporter: Reporter,
 }
 
-impl ApiKubeEventPublisher {
+impl DefaultKubeEventPublisher {
     pub fn new(client: Client, instance: Option<String>) -> Self {
         Self {
             client,
@@ -329,7 +335,7 @@ impl ApiKubeEventPublisher {
     }
 }
 
-impl KubeEventPublisher for ApiKubeEventPublisher {
+impl KubeEventPublisher for DefaultKubeEventPublisher {
     #[instrument(skip(self, app, event))]
     async fn publish_app_event(&self, app: &App, event: KubeEvent) {
         debug!("publishing app event");
@@ -352,6 +358,8 @@ impl KubeEventPublisher for ApiKubeEventPublisher {
         Self::publish(event, recorder).await;
     }
 }
+
+// super::Error
 
 impl From<Error> for super::Error {
     fn from(err: Error) -> Self {
@@ -377,6 +385,8 @@ impl From<regex::Error> for super::Error {
     }
 }
 
+// ::kube::runtime::events::Event
+
 impl From<KubeEvent> for ::kube::runtime::events::Event {
     fn from(event: KubeEvent) -> Self {
         Self {
@@ -389,6 +399,8 @@ impl From<KubeEvent> for ::kube::runtime::events::Event {
     }
 }
 
+// EventType
+
 impl From<KubeEventKind> for EventType {
     fn from(kind: KubeEventKind) -> Self {
         match kind {
@@ -397,6 +409,8 @@ impl From<KubeEventKind> for EventType {
         }
     }
 }
+
+// ServicePod
 
 impl TryFrom<Pod> for ServicePod {
     type Error = Error;
@@ -414,6 +428,8 @@ impl TryFrom<Pod> for ServicePod {
         })
     }
 }
+
+// ServicePodStatus
 
 impl From<PodStatus> for ServicePodStatus {
     fn from(status: PodStatus) -> Self {

@@ -16,8 +16,12 @@ use crate::domain::UserSpec;
 
 use super::{Jwt, JwtEncoder, Result};
 
+// Defaults
+
 const DEFAULT_PRIVKEY: &str = "etc/privkey.pem";
 const DEFAULT_VALIDITY: u32 = 24 * 60 * 60;
+
+// Errors
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -36,6 +40,8 @@ pub enum Error {
         TryFromIntError,
     ),
 }
+
+// Data structs
 
 #[derive(clap::Args, Clone, Debug, Eq, PartialEq)]
 pub struct DefaultJwtEncoderArgs {
@@ -65,6 +71,8 @@ impl Default for DefaultJwtEncoderArgs {
         }
     }
 }
+
+// DefaultJwtEncoder
 
 pub struct DefaultJwtEncoder {
     privkey: PKeyWithDigest<Private>,
@@ -142,6 +150,8 @@ impl JwtEncoder for DefaultJwtEncoder {
         })
     }
 }
+
+// super::Error
 
 impl From<Error> for super::Error {
     fn from(err: Error) -> Self {

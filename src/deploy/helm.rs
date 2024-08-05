@@ -9,6 +9,8 @@ use crate::{domain::App, helm::HelmClient, kube::KubeClient};
 
 use super::{Deployer, Result};
 
+// Errors
+
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("{0}")]
@@ -37,6 +39,8 @@ pub enum Error {
     ),
 }
 
+// Data structs
+
 #[derive(clap::Args, Clone, Debug, Default, Eq, PartialEq)]
 pub struct HelmDeployerArgs {
     #[arg(
@@ -47,6 +51,8 @@ pub struct HelmDeployerArgs {
     )]
     pub values_filepath: Option<PathBuf>,
 }
+
+// HelmDeployer
 
 pub struct HelmDeployer<H: HelmClient> {
     args: HelmDeployerArgs,
@@ -93,6 +99,8 @@ impl<H: HelmClient> Deployer for HelmDeployer<H> {
         Ok(())
     }
 }
+
+// super::Error
 
 impl From<Error> for super::Error {
     fn from(err: Error) -> Self {

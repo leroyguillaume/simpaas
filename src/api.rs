@@ -42,41 +42,24 @@ use crate::{
     CookieArgs, SignalListener, CARGO_PKG_NAME,
 };
 
+// Paths
+
 pub const PATH_JOIN: &str = "/join";
 
-const COOKIE_NAME_JWT: &str = "simpaas-jwt";
+// Cookies
+
+const COOKIE_JWT: &str = "simpaas-jwt";
+
+// Security schemes
 
 const SECURITY_SCHEME_BEARER: &str = "bearerAuth";
 const SECURITY_SCHEME_COOKIE: &str = "cookieAuth";
 
-pub struct ApiContext<J: JwtEncoder, K: KubeClient, P: PasswordEncoder> {
-    pub cookie: CookieArgs,
-    pub jwt_encoder: J,
-    pub kube: K,
-    pub pwd_encoder: P,
-}
-
-pub async fn start_api<
-    J: JwtEncoder + 'static,
-    K: KubeClient + 'static,
-    P: PasswordEncoder + 'static,
->(
-    addr: SocketAddr,
-    root_path: &str,
-    ctx: ApiContext<J, K, P>,
-) -> anyhow::Result<()> {
-    let mut sig = SignalListener::new()?;
-    debug!("binding tcp listener");
-    let tcp = TcpListener::bind(addr).await?;
-    info!("server started");
-    axum::serve(tcp, create_router(root_path, ctx))
-        .with_graceful_shutdown(async move { sig.recv().await })
-        .await?;
-    info!("server stopped");
-    Ok(())
-}
+// Types
 
 type Result<T = ()> = std::result::Result<T, Error>;
+
+// Errors
 
 #[derive(Debug, thiserror::Error)]
 enum Error {
@@ -155,6 +138,17 @@ impl OperationOutput for Error {
     }
 }
 
+// Context
+
+pub struct ApiContext<J: JwtEncoder, K: KubeClient, P: PasswordEncoder> {
+    pub cookie: CookieArgs,
+    pub jwt_encoder: J,
+    pub kube: K,
+    pub pwd_encoder: P,
+}
+
+// Query params
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, JsonSchema, Serialize, Validate)]
 #[serde(rename_all = "camelCase")]
 struct AppFilterQuery {
@@ -162,6 +156,8 @@ struct AppFilterQuery {
     #[serde(default = "default_filter")]
     name: String,
 }
+
+// Requests
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, JsonSchema, Serialize, Validate)]
 #[serde(rename_all = "camelCase")]
@@ -218,6 +214,8 @@ struct UserPasswordCredentialsRequest {
     user: String,
 }
 
+// Responses
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, JsonSchema, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct JwtResponse {
@@ -249,6 +247,130 @@ struct ResourceAlreadyExistsItem {
     source: Option<String>,
     /// Value in conflict.
     value: String,
+}
+
+// Fns
+
+pub async fn start_api<
+    J: JwtEncoder + 'static,
+    K: KubeClient + 'static,
+    P: PasswordEncoder + 'static,
+>(
+    addr: SocketAddr,
+    root_path: &str,
+    ctx: ApiContext<J, K, P>,
+) -> anyhow::Result<()> {
+    let mut sig = SignalListener::new()?;
+    debug!("binding tcp listener");
+    let tcp = TcpListener::bind(addr).await?;
+    info!("server started");
+    axum::serve(tcp, create_router(root_path, ctx))
+        .with_graceful_shutdown(async move { sig.recv().await })
+        .await?;
+    info!("server stopped");
+    Ok(())
+}
+
+fn api_doc(api: TransformOpenApi) -> TransformOpenApi {
+    api.title("SimPaaS API")
+        .summary(env!("CARGO_PKG_DESCRIPTION"))
+        .security_scheme(
+            SECURITY_SCHEME_BEARER,
+            SecurityScheme::Http {
+                bearer_format: Some("Bearer <JWT>".into()),
+                description: None,
+                extensions: Default::default(),
+                scheme: "Bearer".into(),
+            },
+        )
+        .security_scheme(
+            SECURITY_SCHEME_COOKIE,
+            SecurityScheme::ApiKey {
+                description: None,
+                extensions: Default::default(),
+                location: ApiKeyLocation::Cookie,
+                name: COOKIE_JWT.into(),
+            },
+        )
+}
+
+fn auth_response<J: JwtEncoder, K: KubeClient, P: PasswordEncoder>(
+    username: &str,
+    user: &UserSpec,
+    jar: CookieJar,
+    ctx: &ApiContext<J, K, P>,
+) -> Result<(StatusCode, CookieJar, Json<JwtResponse>)> {
+    let jwt = ctx
+        .jwt_encoder
+        .encode(username, user)
+        .map_err(Error::JwtEncoding)?;
+    let cookie = Cookie::build((COOKIE_JWT, jwt.token.clone()))
+        .domain(ctx.cookie.domain.clone())
+        .path("/")
+        .http_only(!ctx.cookie.http_only_disabled)
+        .secure(!ctx.cookie.secure_disabled)
+        .expires(jwt.expiration)
+        .max_age(jwt.validity);
+    Ok((
+        StatusCode::OK,
+        jar.add(cookie),
+        Json(JwtResponse { jwt: jwt.token }),
+    ))
+}
+
+#[instrument(skip(auth_header, jar, encoder, kube))]
+async fn authenticated_user<J: JwtEncoder, K: KubeClient>(
+    auth_header: Option<TypedHeader<Authorization<Bearer>>>,
+    jar: &CookieJar,
+    encoder: &J,
+    kube: &K,
+) -> Result<(String, User)> {
+    let jwt = auth_header
+        .as_ref()
+        .map(|header| header.0.token())
+        .or_else(|| {
+            debug!(
+                "request doesn't contain header `{}`, trying cookie",
+                header::AUTHORIZATION
+            );
+            jar.get(COOKIE_JWT).map(|cookie| cookie.value())
+        })
+        .ok_or_else(|| {
+            debug!("no cookie {COOKIE_JWT}");
+            Error::Unauthorized
+        })?;
+    let name = encoder.decode(jwt).map_err(Error::JwtDecoding)?;
+    let user = kube.get_user(&name).await?.ok_or_else(|| {
+        debug!("user doesn't exist");
+        Error::Unauthorized
+    })?;
+    Ok((name, user))
+}
+
+async fn check_permission<K: KubeClient>(user: &User, action: Action<'_>, kube: &K) -> Result {
+    if kube.user_has_permission(user, action).await? {
+        Ok(())
+    } else {
+        debug!("user doesn't have required permission");
+        Err(Error::Forbidden)
+    }
+}
+
+async fn ensure_domains_are_free<K: KubeClient>(name: &str, svcs: &[Service], kube: &K) -> Result {
+    let usages = kube.domain_usages(name, svcs).await?;
+    if usages.is_empty() {
+        Ok(())
+    } else {
+        let items = usages
+            .into_iter()
+            .map(|usage| ResourceAlreadyExistsItem {
+                field: "domain".into(),
+                source: usage.app,
+                value: usage.domain,
+            })
+            .collect();
+        Err(Error::ResourceAlreadyExists(items))
+    }
 }
 
 fn create_router<J: JwtEncoder + 'static, K: KubeClient + 'static, P: PasswordEncoder + 'static>(
@@ -323,28 +445,7 @@ fn create_router<J: JwtEncoder + 'static, K: KubeClient + 'static, P: PasswordEn
         .layer(Extension(api))
 }
 
-fn api_doc(api: TransformOpenApi) -> TransformOpenApi {
-    api.title("SimPaaS API")
-        .summary(env!("CARGO_PKG_DESCRIPTION"))
-        .security_scheme(
-            SECURITY_SCHEME_BEARER,
-            SecurityScheme::Http {
-                bearer_format: Some("Bearer <JWT>".into()),
-                description: None,
-                extensions: Default::default(),
-                scheme: "Bearer".into(),
-            },
-        )
-        .security_scheme(
-            SECURITY_SCHEME_COOKIE,
-            SecurityScheme::ApiKey {
-                description: None,
-                extensions: Default::default(),
-                location: ApiKeyLocation::Cookie,
-                name: COOKIE_NAME_JWT.into(),
-            },
-        )
-}
+// Handlers
 
 #[instrument(skip(jar, ctx, req), fields(auth.name = req.user))]
 async fn authenticate_with_password<J: JwtEncoder, K: KubeClient, P: PasswordEncoder>(
@@ -707,84 +808,7 @@ fn update_app_doc(op: TransformOperation) -> TransformOperation {
         .response_with::<422, (), _>(unprocessable_entity_doc)
 }
 
-#[instrument(skip(auth_header, jar, encoder, kube))]
-async fn authenticated_user<J: JwtEncoder, K: KubeClient>(
-    auth_header: Option<TypedHeader<Authorization<Bearer>>>,
-    jar: &CookieJar,
-    encoder: &J,
-    kube: &K,
-) -> Result<(String, User)> {
-    let jwt = auth_header
-        .as_ref()
-        .map(|header| header.0.token())
-        .or_else(|| {
-            debug!(
-                "request doesn't contain header `{}`, trying cookie",
-                header::AUTHORIZATION
-            );
-            jar.get(COOKIE_NAME_JWT).map(|cookie| cookie.value())
-        })
-        .ok_or_else(|| {
-            debug!("no cookie {COOKIE_NAME_JWT}");
-            Error::Unauthorized
-        })?;
-    let name = encoder.decode(jwt).map_err(Error::JwtDecoding)?;
-    let user = kube.get_user(&name).await?.ok_or_else(|| {
-        debug!("user doesn't exist");
-        Error::Unauthorized
-    })?;
-    Ok((name, user))
-}
-
-async fn check_permission<K: KubeClient>(user: &User, action: Action<'_>, kube: &K) -> Result {
-    if kube.user_has_permission(user, action).await? {
-        Ok(())
-    } else {
-        debug!("user doesn't have required permission");
-        Err(Error::Forbidden)
-    }
-}
-
-async fn ensure_domains_are_free<K: KubeClient>(name: &str, svcs: &[Service], kube: &K) -> Result {
-    let usages = kube.domain_usages(name, svcs).await?;
-    if usages.is_empty() {
-        Ok(())
-    } else {
-        let items = usages
-            .into_iter()
-            .map(|usage| ResourceAlreadyExistsItem {
-                field: "domain".into(),
-                source: usage.app,
-                value: usage.domain,
-            })
-            .collect();
-        Err(Error::ResourceAlreadyExists(items))
-    }
-}
-
-fn auth_response<J: JwtEncoder, K: KubeClient, P: PasswordEncoder>(
-    username: &str,
-    user: &UserSpec,
-    jar: CookieJar,
-    ctx: &ApiContext<J, K, P>,
-) -> Result<(StatusCode, CookieJar, Json<JwtResponse>)> {
-    let jwt = ctx
-        .jwt_encoder
-        .encode(username, user)
-        .map_err(Error::JwtEncoding)?;
-    let cookie = Cookie::build((COOKIE_NAME_JWT, jwt.token.clone()))
-        .domain(ctx.cookie.domain.clone())
-        .path("/")
-        .http_only(!ctx.cookie.http_only_disabled)
-        .secure(!ctx.cookie.secure_disabled)
-        .expires(jwt.expiration)
-        .max_age(jwt.validity);
-    Ok((
-        StatusCode::OK,
-        jar.add(cookie),
-        Json(JwtResponse { jwt: jwt.token }),
-    ))
-}
+// Docs
 
 fn param_app_name_doc(op: TransformParameter<String>) -> TransformParameter<String> {
     op.description("Name of the app.")
@@ -825,9 +849,13 @@ fn unprocessable_entity_doc<R>(op: TransformResponse<R>) -> TransformResponse<R>
     op.description("Malformed request.")
 }
 
+// Defaults
+
 fn default_filter() -> String {
     r".*".into()
 }
+
+// AppFilter
 
 impl TryFrom<AppFilterQuery> for AppFilter {
     type Error = Error;
