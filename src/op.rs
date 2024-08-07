@@ -1,6 +1,6 @@
 use std::{collections::BTreeMap, sync::Arc, time::Duration};
 
-use futures::{Future, StreamExt};
+use futures::StreamExt;
 use kube::{
     api::ObjectMeta,
     runtime::{
@@ -15,7 +15,9 @@ use tracing::{debug, error, info, info_span, warn, Instrument};
 use crate::{
     deploy::Deployer,
     domain::{App, AppStatus, Invitation, InvitationStatus, ServiceStatus},
-    kube::{KubeClient, KubeEvent, KubeEventKind, KubeEventPublisher, ServicePodStatus, FINALIZER},
+    kube::{
+        AppEvent, InvitationEvent, KubeClient, KubeEventPublisher, ServicePodStatus, FINALIZER,
+    },
     mail::MailSender,
     DelayArgs, SignalListener,
 };
@@ -168,54 +170,6 @@ fn on_error<D: Deployer, K: KubeClient, M: MailSender, P: KubeEventPublisher, R>
     Action::requeue(ctx.delays.retry)
 }
 
-async fn publishing_event<
-    E: std::error::Error + Into<Error>,
-    FUT: Future<Output = std::result::Result<V, E>>,
-    NERR: Fn(&E) -> String,
-    NOK: Fn(&V) -> String,
-    P: Fn(KubeEvent) -> PFUT,
-    PFUT: Future<Output = ()>,
-    V,
->(
-    fut: FUT,
-    action: &'static str,
-    ok_reason: &'static str,
-    note: String,
-    ok_note: NOK,
-    err_note: NERR,
-    publish: P,
-) -> Result<V> {
-    let event = KubeEvent {
-        action,
-        kind: KubeEventKind::Normal,
-        note,
-        reason: action,
-    };
-    publish(event).await;
-    match fut.await {
-        Ok(val) => {
-            let event = KubeEvent {
-                action,
-                kind: KubeEventKind::Normal,
-                note: ok_note(&val),
-                reason: ok_reason,
-            };
-            publish(event).await;
-            Ok(val)
-        }
-        Err(err) => {
-            let event = KubeEvent {
-                action,
-                kind: KubeEventKind::Warn,
-                note: err_note(&err),
-                reason: "Failed",
-            };
-            publish(event).await;
-            Err(err.into())
-        }
-    }
-}
-
 async fn reconcile_app<D: Deployer, K: KubeClient, M: MailSender, P: KubeEventPublisher>(
     app: Arc<App>,
     ctx: Arc<OpContext<D, K, M, P>>,
@@ -228,16 +182,12 @@ async fn reconcile_app<D: Deployer, K: KubeClient, M: MailSender, P: KubeEventPu
             if let Some(finalizers) = &app.metadata.finalizers {
                 if finalizers.iter().any(|finalizer| finalizer == FINALIZER) {
                     let mut app = app.as_ref().clone();
-                    publishing_event(
-                        ctx.deployer.undeploy(name, &app, &ctx.kube),
-                        "Undeploying",
-                        "Undeployed",
-                        "Undeploying".into(),
-                        |_| "Successfully undeployed".into(),
-                        |err| format!("Failed to undeploy: {err}"),
-                        |event| ctx.publisher.publish_app_event(&app, event),
-                    )
-                    .await?;
+                    if let Err(err) = ctx.deployer.undeploy(name, &app, &ctx.kube).await {
+                        ctx.publisher
+                            .publish_app_event(&app, AppEvent::UndeploymentFailed(err.to_string()))
+                            .await;
+                        return Err(err.into());
+                    }
                     let mut finalizers = finalizers.clone();
                     finalizers.retain(|finalizer| finalizer != FINALIZER);
                     app.metadata = ObjectMeta {
@@ -254,16 +204,25 @@ async fn reconcile_app<D: Deployer, K: KubeClient, M: MailSender, P: KubeEventPu
                     update_service_statuses(name, &app, &ctx.kube, &ctx.publisher).await?;
                 }
                 Some(AppStatus::WaitingForDeploy {}) | None => {
-                    publishing_event(
-                        ctx.deployer.deploy(name, &app, &ctx.kube),
-                        "Deploying",
-                        "Deployed",
-                        "Deploying".into(),
-                        |_| "Successfully deployed".into(),
-                        |err| format!("Failed to deploy: {err}"),
-                        |event| ctx.publisher.publish_app_event(&app, event),
-                    )
-                    .await?;
+                    ctx.publisher
+                        .publish_app_event(&app, AppEvent::Deploying)
+                        .await;
+                    match ctx.deployer.deploy(name, &app, &ctx.kube).await {
+                        Ok(_) => {
+                            ctx.publisher
+                                .publish_app_event(&app, AppEvent::Deployed)
+                                .await;
+                        }
+                        Err(err) => {
+                            ctx.publisher
+                                .publish_app_event(
+                                    &app,
+                                    AppEvent::DeploymentFailed(err.to_string()),
+                                )
+                                .await;
+                            return Err(err.into());
+                        }
+                    }
                     update_service_statuses(name, &app, &ctx.kube, &ctx.publisher).await?;
                 }
             }
@@ -304,16 +263,19 @@ async fn send_invitation<K: KubeClient, M: MailSender, P: KubeEventPublisher>(
     kube: &K,
     publisher: &P,
 ) -> Result {
-    publishing_event(
-        sender.send_invitation(token, invit),
-        "Sending",
-        "Sent",
-        format!("Sending email to {}", invit.spec.to),
-        |_| format!("Successfully sent to {}", invit.spec.to),
-        |err| format!("Failed to send mail to {}: {err}", invit.spec.to),
-        |event| publisher.publish_invitation_event(invit, event),
-    )
-    .await?;
+    match sender.send_invitation(token, invit).await {
+        Ok(_) => {
+            publisher
+                .publish_invitation_event(invit, InvitationEvent::Sent)
+                .await;
+        }
+        Err(err) => {
+            publisher
+                .publish_invitation_event(invit, InvitationEvent::SendingFailed(err.to_string()))
+                .await;
+            return Err(err.into());
+        }
+    }
     let status = InvitationStatus { email_sent: true };
     kube.patch_invitation_status(token, &status).await?;
     Ok(())
@@ -347,16 +309,15 @@ async fn update_service_statuses<K: KubeClient, P: KubeEventPublisher>(
         }
         Ok(statuses) as Result<BTreeMap<String, ServiceStatus>>
     };
-    let statuses = publishing_event(
-        monitor,
-        "Monitoring",
-        "Monitored",
-        "Checking probes".into(),
-        |_| "Probes successfully checked".into(),
-        |err| format!("Failed to check service probes: {err}"),
-        |event| publisher.publish_app_event(app, event),
-    )
-    .await?;
+    let statuses = match monitor.await {
+        Ok(statuses) => statuses,
+        Err(err) => {
+            publisher
+                .publish_app_event(app, AppEvent::MonitoringFailed(err.to_string()))
+                .await;
+            return Err(err);
+        }
+    };
     kube.patch_app_status(name, &AppStatus::Deployed(statuses))
         .await?;
     Ok(())
