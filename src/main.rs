@@ -9,9 +9,9 @@ use clap::{Parser, Subcommand};
 use cmd::default::DefaultCommandRunner;
 use deploy::helm::{HelmDeployer, HelmDeployerArgs};
 use domain::{App, Invitation, Role, User};
-use helm::cli::{CliHelmClient, CliHelmClientArgs};
+use helm::default::{DefaultHelmClient, DefaultHelmClientArgs};
 use jwt::default::{DefaultJwtEncoder, DefaultJwtEncoderArgs};
-use kube::api::{ApiKubeClient, ApiKubeEventPublisher};
+use kube::default::{DefaultKubeClient, DefaultKubeEventPublisher};
 use mail::default::{DefaultMailSender, DefaultMailSenderArgs};
 use op::{start_op, OpContext};
 use opentelemetry::KeyValue;
@@ -36,6 +36,8 @@ use tracing_subscriber::{
     fmt::layer, layer::SubscriberExt, registry, util::SubscriberInitExt, EnvFilter,
 };
 
+// Mods
+
 mod api;
 mod cmd;
 mod deploy;
@@ -47,38 +49,11 @@ mod mail;
 mod op;
 mod pwd;
 
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
-    let args = Args::parse();
-    init_tracing(args.obs)?;
-    match args.cmd {
-        Command::Api(args) => {
-            let kube = ::kube::Client::try_default().await?;
-            let ctx = ApiContext {
-                cookie: args.cookie,
-                jwt_encoder: DefaultJwtEncoder::new(args.jwt)?,
-                kube: ApiKubeClient::new(kube),
-                pwd_encoder: BcryptPasswordEncoder,
-            };
-            start_api(args.bind_addr, &args.root_path, ctx).await
-        }
-        Command::Crd { cmd } => cmd.print(),
-        Command::Op(args) => {
-            let kube = ::kube::Client::try_default().await?;
-            let helm = CliHelmClient::new(args.helm, DefaultCommandRunner);
-            let ctx = OpContext {
-                delays: args.delays.into(),
-                deployer: HelmDeployer::new(args.deployer, helm),
-                kube: ApiKubeClient::new(kube.clone()),
-                mail_sender: DefaultMailSender::new(args.mail, args.webapp_url)?,
-                publisher: ApiKubeEventPublisher::new(kube.clone(), args.instance),
-            };
-            start_op(kube, ctx).await
-        }
-    }
-}
+// Bin
 
 const CARGO_PKG_NAME: &str = env!("CARGO_PKG_NAME");
+
+// Defaults
 
 const DEFAULT_APP_STATUS_DELAY: u64 = 30;
 const DEFAULT_BIND_ADDR: SocketAddr =
@@ -88,65 +63,7 @@ const DEFAULT_RETRY_DELAY: u64 = 10;
 const DEFAULT_ROOT_PATH: &str = "/";
 const DEFAULT_WEBAPP_URL: &str = "http://localhost:3000";
 
-#[derive(Clone, Debug, Eq, Parser, PartialEq)]
-#[command(version)]
-struct Args {
-    #[command(subcommand)]
-    cmd: Command,
-    #[command(flatten)]
-    obs: ObsArgs,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Subcommand)]
-enum CrdCommand {
-    #[command(about = "Print App CRD")]
-    App,
-    #[command(about = "Print Invitation CRD", alias = "invit")]
-    Invitation,
-    #[command(about = "Print Role CRD")]
-    Role,
-    #[command(about = "Print User CRD")]
-    User,
-}
-
-impl CrdCommand {
-    fn print(self) -> anyhow::Result<()> {
-        let crd = match self {
-            Self::App => App::crd(),
-            Self::Invitation => Invitation::crd(),
-            Self::Role => Role::crd(),
-            Self::User => User::crd(),
-        };
-        serde_yaml::to_writer(stdout(), &crd)?;
-        Ok(())
-    }
-}
-
-#[derive(clap::Args, Clone, Debug, Eq, PartialEq)]
-struct ObsArgs {
-    #[arg(
-        long,
-        env,
-        default_value = "simpaas=info,warn",
-        long_help = "Log filter (https://docs.rs/tracing-subscriber/latest/tracing_subscriber/filter/struct.EnvFilter.html#directives)"
-    )]
-    log_filter: String,
-    #[arg(long, env, long_help = "URL to OTEL collector")]
-    otel_collector_url: Option<String>,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Subcommand)]
-enum Command {
-    #[command(about = "Start API server")]
-    Api(ApiArgs),
-    #[command(about = "Print CRD")]
-    Crd {
-        #[command(subcommand)]
-        cmd: CrdCommand,
-    },
-    #[command(about = "Start operator")]
-    Op(OpArgs),
-}
+// CLI
 
 #[derive(clap::Args, Clone, Debug, Eq, PartialEq)]
 struct ApiArgs {
@@ -174,6 +91,28 @@ impl Default for ApiArgs {
             root_path: DEFAULT_ROOT_PATH.into(),
         }
     }
+}
+
+#[derive(Clone, Debug, Eq, Parser, PartialEq)]
+#[command(version)]
+struct Args {
+    #[command(subcommand)]
+    cmd: Command,
+    #[command(flatten)]
+    obs: ObsArgs,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Subcommand)]
+enum Command {
+    #[command(about = "Start API server")]
+    Api(ApiArgs),
+    #[command(about = "Print CRD")]
+    Crd {
+        #[command(subcommand)]
+        cmd: CrdCommand,
+    },
+    #[command(about = "Start operator")]
+    Op(OpArgs),
 }
 
 #[derive(clap::Args, Clone, Debug, Eq, PartialEq)]
@@ -209,37 +148,28 @@ impl Default for CookieArgs {
     }
 }
 
-#[derive(clap::Args, Clone, Debug, Eq, PartialEq)]
-struct OpArgs {
-    #[command(flatten)]
-    delays: DelayArgs,
-    #[command(flatten)]
-    deployer: HelmDeployerArgs,
-    #[command(flatten)]
-    helm: CliHelmClientArgs,
-    #[arg(long, env, long_help = "Name of current instance")]
-    instance: Option<String>,
-    #[command(flatten)]
-    mail: DefaultMailSenderArgs,
-    #[arg(
-        long,
-        env,
-        default_value = DEFAULT_WEBAPP_URL,
-        long_help = "WebApp URL"
-    )]
-    webapp_url: String,
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Subcommand)]
+enum CrdCommand {
+    #[command(about = "Print App CRD")]
+    App,
+    #[command(about = "Print Invitation CRD", alias = "invit")]
+    Invitation,
+    #[command(about = "Print Role CRD")]
+    Role,
+    #[command(about = "Print User CRD")]
+    User,
 }
 
-impl Default for OpArgs {
-    fn default() -> Self {
-        Self {
-            delays: Default::default(),
-            deployer: Default::default(),
-            helm: Default::default(),
-            instance: None,
-            mail: DefaultMailSenderArgs::default(),
-            webapp_url: DEFAULT_WEBAPP_URL.into(),
-        }
+impl CrdCommand {
+    fn print(self) -> anyhow::Result<()> {
+        let crd = match self {
+            Self::App => App::crd(),
+            Self::Invitation => Invitation::crd(),
+            Self::Role => Role::crd(),
+            Self::User => User::crd(),
+        };
+        serde_yaml::to_writer(stdout(), &crd)?;
+        Ok(())
     }
 }
 
@@ -272,6 +202,55 @@ impl Default for DelayArgs {
     }
 }
 
+#[derive(clap::Args, Clone, Debug, Eq, PartialEq)]
+struct ObsArgs {
+    #[arg(
+        long,
+        env,
+        default_value = "simpaas=info,warn",
+        long_help = "Log filter (https://docs.rs/tracing-subscriber/latest/tracing_subscriber/filter/struct.EnvFilter.html#directives)"
+    )]
+    log_filter: String,
+    #[arg(long, env, long_help = "URL to OTEL collector")]
+    otel_collector_url: Option<String>,
+}
+
+#[derive(clap::Args, Clone, Debug, Eq, PartialEq)]
+struct OpArgs {
+    #[command(flatten)]
+    delays: DelayArgs,
+    #[command(flatten)]
+    deployer: HelmDeployerArgs,
+    #[command(flatten)]
+    helm: DefaultHelmClientArgs,
+    #[arg(long, env, long_help = "Name of current instance")]
+    instance: Option<String>,
+    #[command(flatten)]
+    mail: DefaultMailSenderArgs,
+    #[arg(
+        long,
+        env,
+        default_value = DEFAULT_WEBAPP_URL,
+        long_help = "WebApp URL"
+    )]
+    webapp_url: String,
+}
+
+impl Default for OpArgs {
+    fn default() -> Self {
+        Self {
+            delays: Default::default(),
+            deployer: Default::default(),
+            helm: Default::default(),
+            instance: None,
+            mail: DefaultMailSenderArgs::default(),
+            webapp_url: DEFAULT_WEBAPP_URL.into(),
+        }
+    }
+}
+
+// SignalListener
+
 struct SignalListener {
     int: Signal,
     term: Signal,
@@ -296,6 +275,41 @@ impl SignalListener {
         }
     }
 }
+
+// Main
+
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    let args = Args::parse();
+    init_tracing(args.obs)?;
+    match args.cmd {
+        Command::Api(args) => {
+            let kube = ::kube::Client::try_default().await?;
+            let ctx = ApiContext {
+                cookie: args.cookie,
+                jwt_encoder: DefaultJwtEncoder::new(args.jwt)?,
+                kube: DefaultKubeClient::new(kube),
+                pwd_encoder: BcryptPasswordEncoder,
+            };
+            start_api(args.bind_addr, &args.root_path, ctx).await
+        }
+        Command::Crd { cmd } => cmd.print(),
+        Command::Op(args) => {
+            let kube = ::kube::Client::try_default().await?;
+            let helm = DefaultHelmClient::new(args.helm, DefaultCommandRunner);
+            let ctx = OpContext {
+                delays: args.delays.into(),
+                deployer: HelmDeployer::new(args.deployer, helm),
+                kube: DefaultKubeClient::new(kube.clone()),
+                mail_sender: DefaultMailSender::new(args.mail, args.webapp_url)?,
+                publisher: DefaultKubeEventPublisher::new(kube.clone(), args.instance),
+            };
+            start_op(kube, ctx).await
+        }
+    }
+}
+
+// Fns
 
 fn init_tracing(args: ObsArgs) -> anyhow::Result<()> {
     let filter = EnvFilter::builder().parse(args.log_filter)?;

@@ -2,9 +2,15 @@ use std::{ffi::OsStr, process::Output};
 
 use futures::Future;
 
+// Mods
+
 pub mod default;
 
+// Types
+
 pub type Result<T = ()> = std::result::Result<T, Error>;
+
+// Errors
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -17,6 +23,8 @@ pub enum Error {
         std::io::Error,
     ),
 }
+
+// Traits
 
 pub trait CommandRunner: Send + Sync {
     fn run<S: AsRef<OsStr> + Send + Sync>(

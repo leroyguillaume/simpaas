@@ -20,7 +20,11 @@ use crate::{
     DelayArgs, SignalListener,
 };
 
+// Types
+
 pub type Result<T = ()> = std::result::Result<T, Error>;
+
+// Errors
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -46,6 +50,8 @@ pub enum Error {
     NoName,
 }
 
+// Data structs
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Delays {
     app_status: Duration,
@@ -61,6 +67,8 @@ impl From<DelayArgs> for Delays {
     }
 }
 
+// Context
+
 pub struct OpContext<D: Deployer, K: KubeClient, M: MailSender, P: KubeEventPublisher> {
     pub delays: Delays,
     pub deployer: D,
@@ -68,6 +76,8 @@ pub struct OpContext<D: Deployer, K: KubeClient, M: MailSender, P: KubeEventPubl
     pub mail_sender: M,
     pub publisher: P,
 }
+
+// Fns
 
 pub async fn start_op<
     D: Deployer + 'static,
@@ -133,14 +143,6 @@ pub async fn start_op<
     Ok(())
 }
 
-fn on_error<D: Deployer, K: KubeClient, M: MailSender, P: KubeEventPublisher, R>(
-    _res: Arc<R>,
-    _err: &::kube::Error,
-    ctx: Arc<OpContext<D, K, M, P>>,
-) -> Action {
-    Action::requeue(ctx.delays.retry)
-}
-
 fn log_controller_error<Q: std::error::Error + 'static, R: std::error::Error + 'static>(
     err: &ControllerError<R, Q>,
 ) {
@@ -155,6 +157,62 @@ fn log_controller_error<Q: std::error::Error + 'static, R: std::error::Error + '
             error!("{err}");
         }
         _ => {}
+    }
+}
+
+fn on_error<D: Deployer, K: KubeClient, M: MailSender, P: KubeEventPublisher, R>(
+    _res: Arc<R>,
+    _err: &::kube::Error,
+    ctx: Arc<OpContext<D, K, M, P>>,
+) -> Action {
+    Action::requeue(ctx.delays.retry)
+}
+
+async fn publishing_event<
+    E: std::error::Error + Into<Error>,
+    FUT: Future<Output = std::result::Result<V, E>>,
+    NERR: Fn(&E) -> String,
+    NOK: Fn(&V) -> String,
+    P: Fn(KubeEvent) -> PFUT,
+    PFUT: Future<Output = ()>,
+    V,
+>(
+    fut: FUT,
+    action: &'static str,
+    ok_reason: &'static str,
+    note: String,
+    ok_note: NOK,
+    err_note: NERR,
+    publish: P,
+) -> Result<V> {
+    let event = KubeEvent {
+        action,
+        kind: KubeEventKind::Normal,
+        note,
+        reason: action,
+    };
+    publish(event).await;
+    match fut.await {
+        Ok(val) => {
+            let event = KubeEvent {
+                action,
+                kind: KubeEventKind::Normal,
+                note: ok_note(&val),
+                reason: ok_reason,
+            };
+            publish(event).await;
+            Ok(val)
+        }
+        Err(err) => {
+            let event = KubeEvent {
+                action,
+                kind: KubeEventKind::Warn,
+                note: err_note(&err),
+                reason: "Failed",
+            };
+            publish(event).await;
+            Err(err.into())
+        }
     }
 }
 
@@ -304,53 +362,7 @@ async fn update_service_statuses<K: KubeClient, P: KubeEventPublisher>(
     Ok(())
 }
 
-async fn publishing_event<
-    E: std::error::Error + Into<Error>,
-    FUT: Future<Output = std::result::Result<V, E>>,
-    NERR: Fn(&E) -> String,
-    NOK: Fn(&V) -> String,
-    P: Fn(KubeEvent) -> PFUT,
-    PFUT: Future<Output = ()>,
-    V,
->(
-    fut: FUT,
-    action: &'static str,
-    ok_reason: &'static str,
-    note: String,
-    ok_note: NOK,
-    err_note: NERR,
-    publish: P,
-) -> Result<V> {
-    let event = KubeEvent {
-        action,
-        kind: KubeEventKind::Normal,
-        note,
-        reason: action,
-    };
-    publish(event).await;
-    match fut.await {
-        Ok(val) => {
-            let event = KubeEvent {
-                action,
-                kind: KubeEventKind::Normal,
-                note: ok_note(&val),
-                reason: ok_reason,
-            };
-            publish(event).await;
-            Ok(val)
-        }
-        Err(err) => {
-            let event = KubeEvent {
-                action,
-                kind: KubeEventKind::Warn,
-                note: err_note(&err),
-                reason: "Failed",
-            };
-            publish(event).await;
-            Err(err.into())
-        }
-    }
-}
+// ::kube::Error
 
 impl From<Error> for ::kube::Error {
     fn from(err: Error) -> Self {

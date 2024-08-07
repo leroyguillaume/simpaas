@@ -7,18 +7,30 @@ use crate::domain::{
     Action, App, AppStatus, Invitation, InvitationStatus, Permission, Role, Service, User,
 };
 
-pub mod api;
+// Mods
+
+pub mod default;
+
+// Finalizers
 
 pub const FINALIZER: &str = "simpaas.gleroy.dev/finalizer";
+
+// Labels
 
 pub const LABEL_APP: &str = "simpaas.gleroy.dev/app";
 pub const LABEL_SERVICE: &str = "simpaas.gleroy.dev/service";
 
+// Types
+
 pub type Result<T = ()> = std::result::Result<T, Error>;
+
+// Errors
 
 #[derive(Debug, thiserror::Error)]
 #[error("kubernetes error: {0}")]
 pub struct Error(#[source] pub Box<dyn std::error::Error + Send + Sync>);
+
+// Data structs
 
 #[derive(Clone, Debug)]
 pub struct AppFilter {
@@ -58,6 +70,8 @@ pub enum ServicePodStatus {
     Running,
     Stopped,
 }
+
+// Traits
 
 pub trait KubeClient: Send + Sync {
     fn delete_app(&self, name: &str) -> impl Future<Output = Result> + Send;

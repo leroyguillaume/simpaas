@@ -6,9 +6,13 @@ use crate::{api::PATH_JOIN, domain::Invitation};
 
 use super::{MailSender, Result};
 
+// Defaults
+
 const DEFAULT_FROM: &str = "noreply@127.0.0.1";
 const DEFAULT_HOST: &str = "127.0.0.1";
 const DEFAULT_PORT: u16 = 25;
+
+// Errors
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -25,6 +29,8 @@ pub enum Error {
         mail_send::Error,
     ),
 }
+
+// Data structs
 
 #[derive(clap::Args, Clone, Debug, Eq, PartialEq)]
 pub struct DefaultMailSenderArgs {
@@ -96,6 +102,8 @@ impl Default for DefaultMailSenderArgs {
     }
 }
 
+// DefaultMailSender
+
 pub struct DefaultMailSender {
     args: DefaultMailSenderArgs,
     invit_tpl: Template,
@@ -153,6 +161,8 @@ impl MailSender for DefaultMailSender {
         self.send(msg).await
     }
 }
+
+// super::Error
 
 impl From<Error> for super::Error {
     fn from(err: Error) -> Self {
