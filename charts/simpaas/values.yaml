@@ -155,7 +155,7 @@ op:
   livenessProbe: {}
   readinessProbe: {}
 
-  chartValues: {}
+  appChartValues: {}
 
   logFilter: ""
 

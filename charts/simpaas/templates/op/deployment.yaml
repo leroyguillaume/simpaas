@@ -56,8 +56,8 @@ spec:
           {{ toYaml . | nindent 10 }}
         {{- end }}
         env:
-        - name: CHART_VALUES
-          value: {{ printf "%s/values.yaml" $chartValuesDir }}
+        - name: APP_CHART_VALUES
+          value: {{ printf "%s/app.yaml" $chartValuesDir }}
         - name: SMTP_HOST
           value: {{ default (printf "%s-smtp" .Release.Name) .Values.op.smtp.host }}
         - name: SMTP_PORT

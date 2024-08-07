@@ -9,6 +9,10 @@ use crate::{domain::App, helm::HelmClient, kube::KubeClient};
 
 use super::{Deployer, Result};
 
+// Defaults
+
+const DEFAULT_CHART_PATH: &str = "charts/simpaas-app";
+
 // Errors
 
 #[derive(Debug, thiserror::Error)]
@@ -41,15 +45,30 @@ pub enum Error {
 
 // Data structs
 
-#[derive(clap::Args, Clone, Debug, Default, Eq, PartialEq)]
+#[derive(clap::Args, Clone, Debug, Eq, PartialEq)]
 pub struct HelmDeployerArgs {
     #[arg(
-        long = "CHART_VALUES",
-        env = "CHART_VALUES",
-        name = "CHART_VALUES",
+        long,
+        env,
+        default_value = DEFAULT_CHART_PATH,
+        long_help = "Path to built-in simpaas-app chart"
+    )]
+    pub app_chart: String,
+    #[arg(
+        long,
+        env,
         long_help = "Path to YAML file of default values of simpaas-app chart"
     )]
-    pub values_filepath: Option<PathBuf>,
+    pub app_chart_values: Option<PathBuf>,
+}
+
+impl Default for HelmDeployerArgs {
+    fn default() -> Self {
+        Self {
+            app_chart: DEFAULT_CHART_PATH.into(),
+            app_chart_values: None,
+        }
+    }
 }
 
 // HelmDeployer
@@ -75,25 +94,27 @@ impl<H: HelmClient> HelmDeployer<H> {
 
 impl<H: HelmClient> Deployer for HelmDeployer<H> {
     #[instrument(skip(self, app, _kube), fields(app.name = name))]
-    async fn deploy<K: KubeClient>(&self, name: &str, app: &App, _kube: &K) -> Result {
+    async fn deploy_app<K: KubeClient>(&self, name: &str, app: &App, _kube: &K) -> Result {
         info!("deploying app");
         debug!("creating temporary directory");
         let dir = TempDir::new(name)?;
         let app_filepath = Self::dump_yaml(&dir, &app.spec)?;
         let mut filepaths = vec![];
-        if let Some(path) = &self.args.values_filepath {
+        if let Some(path) = &self.args.app_chart_values {
             filepaths.push(path.clone());
         };
         filepaths.push(app_filepath);
-        self.helm.upgrade(name, app, &filepaths).await?;
+        self.helm
+            .upgrade(&self.args.app_chart, name, &app.spec.namespace, &filepaths)
+            .await?;
         info!("app deployed");
         Ok(())
     }
 
     #[instrument(skip(self, app, kube), fields(app.name = name))]
-    async fn undeploy<K: KubeClient>(&self, name: &str, app: &App, kube: &K) -> Result {
+    async fn undeploy_app<K: KubeClient>(&self, name: &str, app: &App, kube: &K) -> Result {
         info!("undeploying app");
-        self.helm.uninstall(name, app).await?;
+        self.helm.uninstall(name, &app.spec.namespace).await?;
         kube.delete_namespace(&app.spec.namespace).await?;
         info!("app undeployed");
         Ok(())

@@ -1,4 +1,4 @@
-{{- range $service := .Values.services }}
+{{- range $service := .Values.containers }}
 {{- range $expose := default list $service.expose }}
 {{- if $expose.ingress }}
 {{- $vars := dict "Chart" $.Chart "Expose" $expose "Release" $.Release "Service" $service  -}}

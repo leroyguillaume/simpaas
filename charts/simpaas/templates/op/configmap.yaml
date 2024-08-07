@@ -5,5 +5,5 @@ metadata:
   labels:
     {{- include "simpaas.op.labels" . | nindent 4 }}
 data:
-  values.yaml: |
-    {{ toYaml .Values.op.chartValues | nindent 4 }}
+  app.yaml: |
+    {{ toYaml .Values.op.appChartValues | nindent 4 }}

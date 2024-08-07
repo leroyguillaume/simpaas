@@ -36,7 +36,8 @@ use validator::{Validate, ValidationError, ValidationErrors};
 
 use crate::{
     domain::{
-        Action, App, AppSpec, AppStatus, Invitation, InvitationSpec, Service, User, UserSpec,
+        Action, App, AppSpec, AppStatus, ContainerService, Invitation, InvitationSpec, User,
+        UserSpec,
     },
     jwt::JwtEncoder,
     kube::{AppFilter, KubeClient, FINALIZER},
@@ -164,6 +165,9 @@ struct AppFilterQuery {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, JsonSchema, Serialize, Validate)]
 #[serde(rename_all = "camelCase")]
 struct CreateAppRequest {
+    /// List of container services.
+    #[validate(nested)]
+    containers: Vec<ContainerService>,
     /// Name.
     #[serde(deserialize_with = "string_trim")]
     #[validate(length(min = 1))]
@@ -172,9 +176,6 @@ struct CreateAppRequest {
     #[serde(default, deserialize_with = "option_string_trim")]
     #[validate(length(min = 1))]
     namespace: Option<String>,
-    /// List of app services.
-    #[validate(nested)]
-    services: Vec<Service>,
     /// Helm chart values.
     #[serde(default)]
     values: Map<String, Value>,
@@ -195,11 +196,11 @@ struct SendInvitationRequest {
 #[derive(Clone, Debug, Deserialize, PartialEq, JsonSchema, Serialize, Validate)]
 #[serde(rename_all = "camelCase")]
 struct UpdateAppRequest {
+    /// List of container services.
+    #[validate(nested)]
+    containers: Vec<ContainerService>,
     /// Owner of the app.
     owner: String,
-    /// List of app services.
-    #[validate(nested)]
-    services: Vec<Service>,
     /// Helm chart values.
     #[serde(default)]
     values: Map<String, Value>,
@@ -376,7 +377,11 @@ async fn check_permission<K: KubeClient>(user: &User, action: Action<'_>, kube: 
     }
 }
 
-async fn ensure_domains_are_free<K: KubeClient>(name: &str, svcs: &[Service], kube: &K) -> Result {
+async fn ensure_domains_are_free<K: KubeClient>(
+    name: &str,
+    svcs: &[ContainerService],
+    kube: &K,
+) -> Result {
     let usages = kube.domain_usages(name, svcs).await?;
     if usages.is_empty() {
         Ok(())
@@ -508,7 +513,7 @@ async fn create_app<J: JwtEncoder, K: KubeClient, P: PasswordEncoder>(
     async {
         check_permission(&user, Action::CreateApp, &ctx.kube).await?;
         req.validate()?;
-        ensure_domains_are_free(&req.name, &req.services, &ctx.kube).await?;
+        ensure_domains_are_free(&req.name, &req.containers, &ctx.kube).await?;
         if ctx.kube.get_app(&req.name).await?.is_some() {
             return Err(Error::ResourceAlreadyExists(vec![
                 ResourceAlreadyExistsItem {
@@ -522,7 +527,7 @@ async fn create_app<J: JwtEncoder, K: KubeClient, P: PasswordEncoder>(
         let spec = AppSpec {
             namespace,
             owner: username,
-            services: req.services,
+            containers: req.containers,
             values: req.values,
         };
         let app = App {
@@ -788,7 +793,7 @@ async fn update_app<J: JwtEncoder, K: KubeClient, P: PasswordEncoder>(
             check_permission(&user, Action::UpdateApp(&name), &ctx.kube).await?;
         }
         req.validate()?;
-        ensure_domains_are_free(&name, &req.services, &ctx.kube).await?;
+        ensure_domains_are_free(&name, &req.containers, &ctx.kube).await?;
         if ctx.kube.get_user(&req.owner).await?.is_none() {
             return Err(Error::PreconditionFailed(PreconditionFailedResponse {
                 field: "owner".into(),
@@ -802,7 +807,7 @@ async fn update_app<J: JwtEncoder, K: KubeClient, P: PasswordEncoder>(
             },
             spec: AppSpec {
                 owner: req.owner,
-                services: req.services,
+                containers: req.containers,
                 values: req.values,
                 ..app.spec
             },

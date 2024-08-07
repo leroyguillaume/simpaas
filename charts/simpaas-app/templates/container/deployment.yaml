@@ -1,4 +1,4 @@
-{{- range $service := .Values.services }}
+{{- range $service := .Values.containers }}
 {{- $podAnnotations := merge $.Values.common.podAnnotations (default dict $service.values.podAnnotations) -}}
 {{- $podLabels := merge $.Values.common.podLabels (default dict $service.values.podLabels) -}}
 {{- $imagePullSecrets := concat $.Values.common.imagePullSecrets (default list $service.values.imagePullSecrets) -}}
