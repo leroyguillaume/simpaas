@@ -35,7 +35,9 @@ use uuid::Uuid;
 use validator::{Validate, ValidationError, ValidationErrors};
 
 use crate::{
-    domain::{Action, App, AppSpec, Invitation, InvitationSpec, Service, User, UserSpec},
+    domain::{
+        Action, App, AppSpec, AppStatus, Invitation, InvitationSpec, Service, User, UserSpec,
+    },
     jwt::JwtEncoder,
     kube::{AppFilter, KubeClient, FINALIZER},
     pwd::PasswordEncoder,
@@ -215,6 +217,24 @@ struct UserPasswordCredentialsRequest {
 }
 
 // Responses
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, JsonSchema, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AppResponse {
+    #[serde(flatten)]
+    app: AppSpec,
+    /// Status.
+    status: AppStatus,
+}
+
+impl From<App> for AppResponse {
+    fn from(app: App) -> Self {
+        Self {
+            app: app.spec,
+            status: app.status.unwrap_or(AppStatus::WaitingForDeploy {}),
+        }
+    }
+}
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, JsonSchema, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -481,7 +501,7 @@ async fn create_app<J: JwtEncoder, K: KubeClient, P: PasswordEncoder>(
     jar: CookieJar,
     State(ctx): State<Arc<ApiContext<J, K, P>>>,
     Json(req): Json<CreateAppRequest>,
-) -> Result<(StatusCode, Json<AppSpec>)> {
+) -> Result<(StatusCode, Json<AppResponse>)> {
     let (username, user) =
         authenticated_user(auth_header, &jar, &ctx.jwt_encoder, &ctx.kube).await?;
     let span = info_span!("create_app", app.name = req.name, auth.name = username);
@@ -516,7 +536,7 @@ async fn create_app<J: JwtEncoder, K: KubeClient, P: PasswordEncoder>(
         };
         ctx.kube.patch_app(&req.name, &app).await?;
         info!("app created");
-        Ok((StatusCode::CREATED, Json(app.spec)))
+        Ok((StatusCode::CREATED, Json(app.into())))
     }
     .instrument(span)
     .await
@@ -525,7 +545,7 @@ async fn create_app<J: JwtEncoder, K: KubeClient, P: PasswordEncoder>(
 fn create_app_doc(op: TransformOperation) -> TransformOperation {
     op.description("Create a new app.")
         .security_requirement_multi([SECURITY_SCHEME_BEARER, SECURITY_SCHEME_COOKIE])
-        .response::<201, Json<AppSpec>>()
+        .response::<201, Json<AppResponse>>()
         .response_with::<400, Json<HashMap<String, Value>>, _>(bad_request_doc)
         .response_with::<401, (), _>(unauthorized_doc)
         .response_with::<403, (), _>(forbidden_doc)
@@ -627,7 +647,7 @@ async fn get_app<J: JwtEncoder, K: KubeClient, P: PasswordEncoder>(
     jar: CookieJar,
     State(ctx): State<Arc<ApiContext<J, K, P>>>,
     Path(name): Path<String>,
-) -> Result<(StatusCode, Json<AppSpec>)> {
+) -> Result<(StatusCode, Json<AppResponse>)> {
     let (username, user) =
         authenticated_user(auth_header, &jar, &ctx.jwt_encoder, &ctx.kube).await?;
     let span = info_span!("get_app", app.name = name, auth.name = username);
@@ -640,7 +660,7 @@ async fn get_app<J: JwtEncoder, K: KubeClient, P: PasswordEncoder>(
         if app.spec.owner != username {
             check_permission(&user, Action::ReadApp(&name), &ctx.kube).await?;
         }
-        Ok((StatusCode::OK, Json(app.spec)))
+        Ok((StatusCode::OK, Json(app.into())))
     }
     .instrument(span)
     .await
@@ -650,7 +670,7 @@ fn get_app_doc(op: TransformOperation) -> TransformOperation {
     op.description("Get an app.")
         .security_requirement_multi([SECURITY_SCHEME_BEARER, SECURITY_SCHEME_COOKIE])
         .parameter("name", param_app_name_doc)
-        .response::<200, Json<AppSpec>>()
+        .response::<200, Json<AppResponse>>()
         .response_with::<400, Json<HashMap<String, Value>>, _>(bad_request_doc)
         .response_with::<401, (), _>(unauthorized_doc)
         .response_with::<403, (), _>(forbidden_doc)
@@ -721,20 +741,20 @@ async fn list_apps<J: JwtEncoder, K: KubeClient, P: PasswordEncoder>(
     jar: CookieJar,
     State(ctx): State<Arc<ApiContext<J, K, P>>>,
     Query(filter): Query<AppFilterQuery>,
-) -> Result<(StatusCode, Json<Vec<AppSpec>>)> {
+) -> Result<(StatusCode, Json<Vec<AppResponse>>)> {
     let (username, user) =
         authenticated_user(auth_header, &jar, &ctx.jwt_encoder, &ctx.kube).await?;
     let span = info_span!("list_apps", auth.name = username);
     async {
         let filter = filter.try_into()?;
-        let apps = ctx
+        let resps = ctx
             .kube
             .list_apps(&filter, &username, &user)
             .await?
             .into_iter()
-            .map(|app| app.spec)
+            .map(AppResponse::from)
             .collect();
-        Ok((StatusCode::OK, Json(apps)))
+        Ok((StatusCode::OK, Json(resps)))
     }
     .instrument(span)
     .await
@@ -754,7 +774,7 @@ async fn update_app<J: JwtEncoder, K: KubeClient, P: PasswordEncoder>(
     Path(name): Path<String>,
     State(ctx): State<Arc<ApiContext<J, K, P>>>,
     Json(req): Json<UpdateAppRequest>,
-) -> Result<(StatusCode, Json<AppSpec>)> {
+) -> Result<(StatusCode, Json<AppResponse>)> {
     let (username, user) =
         authenticated_user(auth_header, &jar, &ctx.jwt_encoder, &ctx.kube).await?;
     let span = info_span!("update_app", app.name = name, auth.name = username);
@@ -790,7 +810,7 @@ async fn update_app<J: JwtEncoder, K: KubeClient, P: PasswordEncoder>(
         };
         ctx.kube.patch_app(&name, &app).await?;
         info!("app updated");
-        Ok((StatusCode::OK, Json(app.spec)))
+        Ok((StatusCode::OK, Json(app.into())))
     }
     .instrument(span)
     .await
@@ -800,7 +820,7 @@ fn update_app_doc(op: TransformOperation) -> TransformOperation {
     op.description("Update an app.")
         .security_requirement_multi([SECURITY_SCHEME_BEARER, SECURITY_SCHEME_COOKIE])
         .parameter("name", param_app_name_doc)
-        .response::<201, Json<AppSpec>>()
+        .response::<201, Json<AppResponse>>()
         .response_with::<400, Json<HashMap<String, Value>>, _>(bad_request_doc)
         .response_with::<401, (), _>(unauthorized_doc)
         .response_with::<403, (), _>(forbidden_doc)
