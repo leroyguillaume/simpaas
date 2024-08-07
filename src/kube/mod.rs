@@ -46,20 +46,6 @@ pub struct DomainUsage {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct KubeEvent {
-    pub action: &'static str,
-    pub kind: KubeEventKind,
-    pub note: String,
-    pub reason: &'static str,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum KubeEventKind {
-    Normal,
-    Warn,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ServicePod {
     pub name: String,
     pub status: ServicePodStatus,
@@ -69,6 +55,24 @@ pub struct ServicePod {
 pub enum ServicePodStatus {
     Running,
     Stopped,
+}
+
+// Events
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum AppEvent {
+    Deployed,
+    Deploying,
+    DeploymentFailed(String),
+    MonitoringFailed(String),
+    Undeploying,
+    UndeploymentFailed(String),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum InvitationEvent {
+    SendingFailed(String),
+    Sent,
 }
 
 // Traits
@@ -145,11 +149,11 @@ pub trait KubeClient: Send + Sync {
 }
 
 pub trait KubeEventPublisher: Send + Sync {
-    fn publish_app_event(&self, app: &App, event: KubeEvent) -> impl Future<Output = ()> + Send;
+    fn publish_app_event(&self, app: &App, event: AppEvent) -> impl Future<Output = ()> + Send;
 
     fn publish_invitation_event(
         &self,
         invit: &Invitation,
-        event: KubeEvent,
+        event: InvitationEvent,
     ) -> impl Future<Output = ()> + Send;
 }

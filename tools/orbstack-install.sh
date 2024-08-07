@@ -5,10 +5,7 @@ set -e
 ns=simpaas
 
 if ! ./tools/gen-crds.sh; then
-  for crd in $(kubectl get crds -oname | grep simpaas); do
-    kubectl delete "$crd"
-  done
-  find charts/simpaas/crds -name '*.yaml' -exec kubectl apply -f {} \;
+  ./tools/install-crds.sh
 fi
 
 if [ -f .local/values.yaml ]; then

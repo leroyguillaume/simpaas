@@ -6,7 +6,7 @@ use k8s_openapi::api::{
 };
 use kube::{
     api::{DeleteParams, ListParams, Patch, PatchParams},
-    runtime::events::{EventType, Recorder, Reporter},
+    runtime::events::{Event, EventType, Recorder, Reporter},
     Api, Client, Resource,
 };
 use regex::Regex;
@@ -22,7 +22,7 @@ use crate::{
 };
 
 use super::{
-    AppFilter, DomainUsage, KubeClient, KubeEvent, KubeEventKind, KubeEventPublisher, Result,
+    AppEvent, AppFilter, DomainUsage, InvitationEvent, KubeClient, KubeEventPublisher, Result,
     ServicePod, ServicePodStatus, LABEL_APP, LABEL_SERVICE,
 };
 
@@ -328,8 +328,8 @@ impl DefaultKubeEventPublisher {
         }
     }
 
-    async fn publish(event: KubeEvent, recorder: Recorder) {
-        if let Err(err) = recorder.publish(event.into()).await {
+    async fn publish(event: Event, recorder: Recorder) {
+        if let Err(err) = recorder.publish(event).await {
             warn!("failed to publish event: {err}");
         }
     }
@@ -337,25 +337,25 @@ impl DefaultKubeEventPublisher {
 
 impl KubeEventPublisher for DefaultKubeEventPublisher {
     #[instrument(skip(self, app, event))]
-    async fn publish_app_event(&self, app: &App, event: KubeEvent) {
+    async fn publish_app_event(&self, app: &App, event: AppEvent) {
         debug!("publishing app event");
         let recorder = Recorder::new(
             self.client.clone(),
             self.reporter.clone(),
             app.object_ref(&()),
         );
-        Self::publish(event, recorder).await;
+        Self::publish(event.into(), recorder).await;
     }
 
     #[instrument(skip(self, invit, event))]
-    async fn publish_invitation_event(&self, invit: &Invitation, event: KubeEvent) {
+    async fn publish_invitation_event(&self, invit: &Invitation, event: InvitationEvent) {
         debug!("publishing invitation event");
         let recorder = Recorder::new(
             self.client.clone(),
             self.reporter.clone(),
             invit.object_ref(&()),
         );
-        Self::publish(event, recorder).await;
+        Self::publish(event.into(), recorder).await;
     }
 }
 
@@ -385,27 +385,74 @@ impl From<regex::Error> for super::Error {
     }
 }
 
-// ::kube::runtime::events::Event
+// Event
 
-impl From<KubeEvent> for ::kube::runtime::events::Event {
-    fn from(event: KubeEvent) -> Self {
-        Self {
-            action: event.action.into(),
-            note: Some(event.note),
-            reason: event.reason.into(),
-            secondary: None,
-            type_: event.kind.into(),
+impl From<AppEvent> for Event {
+    fn from(event: AppEvent) -> Self {
+        match event {
+            AppEvent::Deployed => Self {
+                action: "Deploying".into(),
+                type_: EventType::Normal,
+                reason: "Deployed".into(),
+                note: Some("App deployed successfully".into()),
+                secondary: None,
+            },
+            AppEvent::Deploying => Self {
+                action: "Deploying".into(),
+                type_: EventType::Normal,
+                reason: "Deploying".into(),
+                note: Some("Deployment started".into()),
+                secondary: None,
+            },
+            AppEvent::DeploymentFailed(err) => Self {
+                action: "Deploying".into(),
+                type_: EventType::Warning,
+                reason: "Failed".into(),
+                note: Some(format!("Deployment failed: {err}")),
+                secondary: None,
+            },
+            AppEvent::MonitoringFailed(err) => Self {
+                action: "Monitoring".into(),
+                type_: EventType::Warning,
+                reason: "Failed".into(),
+                note: Some(format!("Monitoring failed: {err}")),
+                secondary: None,
+            },
+            AppEvent::Undeploying => Self {
+                action: "Undeploying".into(),
+                type_: EventType::Normal,
+                reason: "Undeploying".into(),
+                note: Some("Undeployment started".into()),
+                secondary: None,
+            },
+            AppEvent::UndeploymentFailed(err) => Self {
+                action: "Undeploying".into(),
+                type_: EventType::Warning,
+                reason: "Failed".into(),
+                note: Some(format!("Undeployment failed: {err}")),
+                secondary: None,
+            },
         }
     }
 }
 
-// EventType
-
-impl From<KubeEventKind> for EventType {
-    fn from(kind: KubeEventKind) -> Self {
-        match kind {
-            KubeEventKind::Normal => Self::Normal,
-            KubeEventKind::Warn => Self::Warning,
+impl From<InvitationEvent> for Event {
+    fn from(event: InvitationEvent) -> Self {
+        match event {
+            InvitationEvent::SendingFailed(err) => Self {
+                action: "Sending".into(),
+                type_: EventType::Warning,
+                reason: "Failed".into(),
+                note: Some(format!("Sending email failed: {err}")),
+                secondary: None,
+            },
+            InvitationEvent::Sent => Self {
+                action: "Sending".into(),
+                type_: EventType::Normal,
+                reason: "Sent".into(),
+                note: Some("Email sent".into()),
+                secondary: None,
+            },
         }
     }
 }
