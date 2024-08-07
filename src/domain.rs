@@ -41,12 +41,12 @@ pub enum Action<'a> {
 )]
 #[serde(rename_all = "camelCase")]
 pub struct AppSpec {
+    /// List of container services.
+    pub containers: Vec<ContainerService>,
     /// Namespace.
     pub namespace: String,
     /// Owner of the app.
     pub owner: String,
-    /// List of app services.
-    pub services: Vec<Service>,
     /// Helm chart values.
     #[serde(default)]
     pub values: Map<String, Value>,
@@ -192,7 +192,7 @@ pub struct RoleSpec {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, JsonSchema, Serialize, Validate)]
 #[serde(rename_all = "camelCase")]
-pub struct Service {
+pub struct ContainerService {
     /// List of ports to expose.
     #[serde(default)]
     #[validate(nested)]

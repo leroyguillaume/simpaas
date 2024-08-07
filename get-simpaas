@@ -134,7 +134,7 @@ install_chart $ns_simpaas simpaas $repo_simpaas/simpaas-stack \
   --set-json "simpaas.ingress.annotations={\"cert-manager.io/cluster-issuer\":\"$issuer\"}" \
   --set simpaas.ingress.create=$ingress_create \
   --set "simpaas.ingress.domain=$SIMPAAS_DOMAIN" \
-  --set-json "simpaas.op.chartValues={\"ingress\":{\"annotations\":{\"cert-manager.io/cluster-issuer\":\"$issuer\"}}}" \
+  --set-json "simpaas.op.appChartValues={\"ingress\":{\"annotations\":{\"cert-manager.io/cluster-issuer\":\"$issuer\"}}}" \
   "${set_smtp_env[@]}" \
   "${set_values[@]}"
 

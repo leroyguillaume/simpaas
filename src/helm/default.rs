@@ -2,14 +2,13 @@ use std::path::PathBuf;
 
 use tracing::{debug, error, instrument};
 
-use crate::{cmd::CommandRunner, domain::App};
+use crate::cmd::CommandRunner;
 
 use super::{HelmClient, Result};
 
 // Defaults
 
 const DEFAULT_BIN: &str = "helm";
-const DEFAULT_CHART_PATH: &str = "charts/simpaas-app";
 
 // Errors
 
@@ -37,20 +36,12 @@ pub struct DefaultHelmClientArgs {
         long_help = "Helm binary to use"
     )]
     pub bin: String,
-    #[arg(
-        long,
-        env,
-        default_value = DEFAULT_CHART_PATH,
-        long_help = "Path to built-in simpaas-app chart"
-    )]
-    pub chart_path: PathBuf,
 }
 
 impl Default for DefaultHelmClientArgs {
     fn default() -> Self {
         Self {
             bin: DEFAULT_BIN.into(),
-            chart_path: DEFAULT_CHART_PATH.into(),
         }
     }
 }
@@ -69,31 +60,30 @@ impl<R: CommandRunner> DefaultHelmClient<R> {
 }
 
 impl<R: CommandRunner> HelmClient for DefaultHelmClient<R> {
-    #[instrument("helm_uninstall", skip(self, name, app), fields(app.name = name, app.namespace = app.spec.namespace))]
-    async fn uninstall(&self, name: &str, app: &App) -> Result {
+    #[instrument("helm_uninstall", skip(self))]
+    async fn uninstall(&self, release: &str, namespace: &str) -> Result {
         debug!("running helm uninstall");
         self.runner
             .run(
-                "helm",
-                &[
-                    "uninstall",
-                    "-n",
-                    &app.spec.namespace,
-                    "--ignore-not-found",
-                    name,
-                ],
+                &self.args.bin,
+                &["uninstall", "-n", namespace, "--ignore-not-found", release],
             )
             .await?;
         Ok(())
     }
 
-    #[instrument("helm_upgrade", skip(self, app, filepaths), fields(app.name = name, app.namespace = app.spec.namespace))]
-    async fn upgrade(&self, name: &str, app: &App, filepaths: &[PathBuf]) -> Result {
-        let chart = self.args.chart_path.to_str().ok_or(Error::InvalidUnicode)?;
+    #[instrument("helm_upgrade", skip(self, filepaths))]
+    async fn upgrade(
+        &self,
+        chart: &str,
+        release: &str,
+        namespace: &str,
+        filepaths: &[PathBuf],
+    ) -> Result {
         let mut args = vec![
             "upgrade",
             "-n",
-            &app.spec.namespace,
+            namespace,
             "--create-namespace",
             "--install",
         ];
@@ -103,9 +93,9 @@ impl<R: CommandRunner> HelmClient for DefaultHelmClient<R> {
             args.push(path);
         }
         debug!("running helm upgrade");
-        args.push(name);
+        args.push(release);
         args.push(chart);
-        self.runner.run("helm", &args).await?;
+        self.runner.run(&self.args.bin, &args).await?;
         Ok(())
     }
 }

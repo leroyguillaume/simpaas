@@ -10,7 +10,7 @@ use kube::{
     Api,
 };
 use tokio::{sync::broadcast::channel, task::JoinSet};
-use tracing::{debug, error, info, info_span, warn, Instrument};
+use tracing::{debug, error, info, info_span, instrument, warn, Instrument};
 
 use crate::{
     deploy::Deployer,
@@ -103,14 +103,9 @@ pub async fn start_op<
         })
         .run(reconcile_app, on_error, ctx.clone())
         .for_each(|res| async move {
-            match res {
-                Ok(_) => {
-                    debug!("app reconcilation succeeded");
-                }
-                Err(err) => {
-                    error!("app reconcilation failed: {err}");
-                    log_controller_error(&err);
-                }
+            if let Err(err) = res {
+                error!("app reconcilation failed: {err}");
+                log_controller_error(&err);
             }
         });
     let invit_api = Api::default_namespaced(kube);
@@ -120,14 +115,9 @@ pub async fn start_op<
         })
         .run(reconcile_invitation, on_error, ctx)
         .for_each(|res| async move {
-            match res {
-                Ok(_) => {
-                    debug!("invitation reconcilation succeeded");
-                }
-                Err(err) => {
-                    error!("invitation reconcilation failed: {err}");
-                    log_controller_error(&err);
-                }
+            if let Err(err) = res {
+                error!("invitation reconcilation failed: {err}");
+                log_controller_error(&err);
             }
         });
     tasks.spawn(app_ctrl);
@@ -177,12 +167,11 @@ async fn reconcile_app<D: Deployer, K: KubeClient, M: MailSender, P: KubeEventPu
     let name = app.metadata.name.as_ref().ok_or(Error::NoName)?;
     let span = info_span!("reconcile_app", app.name = name,);
     async {
-        debug!("reconciling app");
         if app.metadata.deletion_timestamp.is_some() {
             if let Some(finalizers) = &app.metadata.finalizers {
                 if finalizers.iter().any(|finalizer| finalizer == FINALIZER) {
                     let mut app = app.as_ref().clone();
-                    if let Err(err) = ctx.deployer.undeploy(name, &app, &ctx.kube).await {
+                    if let Err(err) = ctx.deployer.undeploy_app(name, &app, &ctx.kube).await {
                         ctx.publisher
                             .publish_app_event(&app, AppEvent::UndeploymentFailed(err.to_string()))
                             .await;
@@ -207,7 +196,7 @@ async fn reconcile_app<D: Deployer, K: KubeClient, M: MailSender, P: KubeEventPu
                     ctx.publisher
                         .publish_app_event(&app, AppEvent::Deploying)
                         .await;
-                    match ctx.deployer.deploy(name, &app, &ctx.kube).await {
+                    match ctx.deployer.deploy_app(name, &app, &ctx.kube).await {
                         Ok(_) => {
                             ctx.publisher
                                 .publish_app_event(&app, AppEvent::Deployed)
@@ -240,7 +229,6 @@ async fn reconcile_invitation<D: Deployer, K: KubeClient, M: MailSender, P: Kube
     let token = invit.metadata.name.as_ref().ok_or(Error::NoName)?;
     let span = info_span!("reconcile_invitation", invit.token = token);
     async {
-        debug!("reconciling invitation");
         if let Some(status) = &invit.status {
             if status.email_sent {
                 debug!("email was already sent");
@@ -281,6 +269,7 @@ async fn send_invitation<K: KubeClient, M: MailSender, P: KubeEventPublisher>(
     Ok(())
 }
 
+#[instrument(skip(name, app, kube, publisher), fields(app.name = name))]
 async fn update_service_statuses<K: KubeClient, P: KubeEventPublisher>(
     name: &str,
     app: &App,
@@ -289,7 +278,7 @@ async fn update_service_statuses<K: KubeClient, P: KubeEventPublisher>(
 ) -> Result {
     let monitor = async {
         let mut statuses = BTreeMap::new();
-        for service in &app.spec.services {
+        for service in &app.spec.containers {
             let pods = kube.list_service_pods(name, &service.name).await?;
             let mut stopped = 0;
             for pod in &pods {

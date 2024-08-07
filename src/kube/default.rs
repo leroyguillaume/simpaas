@@ -15,8 +15,8 @@ use tracing::{debug, instrument, warn};
 
 use crate::{
     domain::{
-        Action, App, AppStatus, Invitation, InvitationStatus, Permission, PermissionError, Role,
-        Service, User,
+        Action, App, AppStatus, ContainerService, Invitation, InvitationStatus, Permission,
+        PermissionError, Role, User,
     },
     CARGO_PKG_NAME,
 };
@@ -95,7 +95,11 @@ impl KubeClient for DefaultKubeClient {
     }
 
     #[instrument(skip(self, name, svcs), fields(app.name = name))]
-    async fn domain_usages(&self, name: &str, svcs: &[Service]) -> Result<Vec<DomainUsage>> {
+    async fn domain_usages(
+        &self,
+        name: &str,
+        svcs: &[ContainerService],
+    ) -> Result<Vec<DomainUsage>> {
         let domains: Vec<&String> = svcs
             .iter()
             .flat_map(|svc| {

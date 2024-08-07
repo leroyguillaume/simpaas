@@ -2,8 +2,6 @@ use std::path::PathBuf;
 
 use futures::Future;
 
-use crate::domain::App;
-
 // Mods
 
 pub mod default;
@@ -21,12 +19,13 @@ pub struct Error(#[source] pub Box<dyn std::error::Error + Send + Sync>);
 // Traits
 
 pub trait HelmClient: Send + Sync {
-    fn uninstall(&self, name: &str, app: &App) -> impl Future<Output = Result> + Send;
+    fn uninstall(&self, release: &str, namespace: &str) -> impl Future<Output = Result> + Send;
 
     fn upgrade(
         &self,
-        name: &str,
-        app: &App,
+        chart: &str,
+        release: &str,
+        namespace: &str,
         filepaths: &[PathBuf],
     ) -> impl Future<Output = Result> + Send;
 }

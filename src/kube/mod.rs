@@ -4,7 +4,7 @@ use futures::Future;
 use regex::Regex;
 
 use crate::domain::{
-    Action, App, AppStatus, Invitation, InvitationStatus, Permission, Role, Service, User,
+    Action, App, AppStatus, ContainerService, Invitation, InvitationStatus, Permission, Role, User,
 };
 
 // Mods
@@ -87,7 +87,7 @@ pub trait KubeClient: Send + Sync {
     fn domain_usages(
         &self,
         name: &str,
-        svcs: &[Service],
+        svcs: &[ContainerService],
     ) -> impl Future<Output = Result<Vec<DomainUsage>>> + Send;
 
     fn get_app(&self, name: &str) -> impl Future<Output = Result<Option<App>>> + Send;

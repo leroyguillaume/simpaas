@@ -1,4 +1,4 @@
-{{- range $service := .Values.services }}
+{{- range $service := .Values.containers }}
 {{- if gt (len (default list $service.expose)) 0 }}
 {{- $vars := dict "Chart" $.Chart "Release" $.Release "Service" $service  -}}
 apiVersion: v1

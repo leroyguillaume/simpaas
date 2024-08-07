@@ -20,14 +20,8 @@ spec:
         properties:
           spec:
             properties:
-              namespace:
-                description: Namespace.
-                type: string
-              owner:
-                description: Owner of the app.
-                type: string
-              services:
-                description: List of app services.
+              containers:
+                description: List of container services.
                 items:
                   properties:
                     expose:
@@ -93,15 +87,21 @@ spec:
                   - name
                   type: object
                 type: array
+              namespace:
+                description: Namespace.
+                type: string
+              owner:
+                description: Owner of the app.
+                type: string
               values:
                 additionalProperties: true
                 default: {}
                 description: Helm chart values.
                 type: object
             required:
+            - containers
             - namespace
             - owner
-            - services
             type: object
           status:
             nullable: true

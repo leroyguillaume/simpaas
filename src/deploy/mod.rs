@@ -19,14 +19,14 @@ pub struct Error(#[source] pub Box<dyn std::error::Error + Send + Sync>);
 // Traits
 
 pub trait Deployer: Send + Sync {
-    fn deploy<K: KubeClient>(
+    fn deploy_app<K: KubeClient>(
         &self,
         name: &str,
         app: &App,
         kube: &K,
     ) -> impl Future<Output = Result> + Send;
 
-    fn undeploy<K: KubeClient>(
+    fn undeploy_app<K: KubeClient>(
         &self,
         name: &str,
         app: &App,
