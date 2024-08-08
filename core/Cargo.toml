@@ -1,0 +1,10 @@
+[dependencies]
+thiserror = "1"
+tracing = "0"
+tracing-subscriber = {version = "0", features = ["env-filter"]}
+
+[package]
+description = "SimPaaS core structs"
+name = "simpaas-core"
+edition.workspace = true
+version.workspace = true

@@ -1,0 +1,2 @@
+[env]
+LOG_FILTER = "simpaas_api=debug,simpaas_core=debug,simpaas_operator=debug,warn"
