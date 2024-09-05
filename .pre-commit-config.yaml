@@ -38,3 +38,10 @@ repos:
   rev: v0.1.23
   hooks:
   - id: helmlint
+- repo: local
+  hooks:
+  - id: crds
+    name: crds
+    language: script
+    pass_filenames: false
+    entry: ./tools/generate-crds.sh

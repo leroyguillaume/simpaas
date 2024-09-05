@@ -1,0 +1,232 @@
+nameOverride: ""
+
+clusterDomain: cluster.local
+
+image:
+  registry: ""
+  pullSecrets: []
+  pullPolicy: IfNotPresent
+
+labels: {}
+
+podAnnotations: {}
+podLabels: {}
+
+podSecurityContext:
+  fsGroupChangePolicy: Always
+  fsGroup: 1001
+securityContext:
+  runAsUser: 1001
+  runAsGroup: 1001
+  runAsNonRoot: true
+  privileged: false
+  readOnlyRootFilesystem: true
+  allowPrivilegeEscalation: false
+
+priotityClassName: ""
+
+schedulerName: ""
+
+topologySpreadConstraints: []
+
+hostAliases: []
+
+initContainers: []
+
+env: []
+
+volumeMounts: []
+volumes: []
+
+nodeSelector: {}
+affinity: {}
+tolerations: []
+
+secret:
+  create: true
+  name: ""
+  key:
+    postgresPassword: postgres-password
+    repmgrPassword: repmgr-password
+    pgpoolAdminPassword: pgpool-admin-password
+
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+  automount: true
+
+port: 5432
+db:
+  postgres: postgres
+  repmgr: repmgr
+user:
+  postgres: postgres
+  repmgr: repmgr
+
+postgresql:
+  nameOverride: ""
+
+  image:
+    registry: ""
+    repository: bitnami/postgresql-repmgr
+    tag: 16.4.0
+    pullSecrets: []
+    pullPolicy: ""
+
+  replicas: 3
+
+  podManagementPolicy: Parallel
+
+  updateStrategy:
+    type: RollingUpdate
+
+  persistentVolumeClaimRetentionPolicy:
+    whenDeleted: Delete
+    whenScaled: Delete
+
+  podAnnotations: {}
+  podLabels: {}
+
+  podSecurityContext: {}
+  securityContext: {}
+
+  priotityClassName: ""
+
+  schedulerName: ""
+
+  topologySpreadConstraints: []
+
+  hostAliases: []
+
+  terminationGracePeriodSeconds: ""
+
+  initContainers: []
+
+  command: []
+  args: []
+
+  lifecycle: {}
+  preStopDelayAfterPgStopSeconds: 25
+
+  env: []
+
+  livenessProbe:
+    enabled: true
+    handler: {}
+    initialDelaySeconds: 30
+    periodSeconds: 10
+    timeoutSeconds: 5
+    successThreshold: 1
+    failureThreshold: 5
+  readinessProbe:
+    enabled: true
+    initialDelaySeconds: 5
+    periodSeconds: 5
+    timeoutSeconds: 5
+    successThreshold: 1
+    failureThreshold: 5
+  startupProbe:
+    enabled: true
+    initialDelaySeconds: 5
+    periodSeconds: 10
+    timeoutSeconds: 5
+    successThreshold: 1
+    failureThreshold: 10
+
+  resources: {}
+
+  volumeMounts: []
+  volumes: []
+
+  nodeSelector: {}
+  affinity: {}
+  tolerations: []
+
+  service:
+    type: ClusterIP
+    port: 5432
+
+  persistence:
+    storageClassName: ""
+    mountPath: /postgresql
+    accessModes:
+      - ReadWriteOnce
+    size: 10G
+
+pgpool:
+  nameOverride: ""
+
+  image:
+    registry: ""
+    repository: bitnami/pgpool
+    tag: 4.5.2
+    pullSecrets: []
+    pullPolicy: ""
+
+  replicas: 1
+
+  podAnnotations: {}
+  podLabels: {}
+
+  podSecurityContext: {}
+  securityContext: {}
+
+  priotityClassName: ""
+
+  schedulerName: ""
+
+  topologySpreadConstraints: []
+
+  hostAliases: []
+
+  terminationGracePeriodSeconds: ""
+
+  initContainers: []
+
+  command: []
+  args: []
+
+  lifecycle: {}
+
+  env: []
+
+  livenessProbe:
+    enabled: true
+    handler: {}
+    initialDelaySeconds: 30
+    periodSeconds: 10
+    timeoutSeconds: 5
+    successThreshold: 1
+    failureThreshold: 5
+  readinessProbe:
+    enabled: true
+    handler: {}
+    initialDelaySeconds: 5
+    periodSeconds: 5
+    timeoutSeconds: 5
+    successThreshold: 1
+    failureThreshold: 5
+  startupProbe:
+    enabled: true
+    handler: {}
+    initialDelaySeconds: 5
+    periodSeconds: 10
+    timeoutSeconds: 5
+    successThreshold: 1
+    failureThreshold: 10
+
+  resources: {}
+
+  volumeMounts: []
+  volumes: []
+
+  nodeSelector: {}
+  affinity: {}
+  tolerations: []
+
+  service:
+    type: ClusterIP
+    port: 5432
+
+  adminUser: admin

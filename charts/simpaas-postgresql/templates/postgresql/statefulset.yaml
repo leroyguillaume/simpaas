@@ -1,0 +1,267 @@
+{{- $podAnnotations := merge .Values.podAnnotations .Values.postgresql.podAnnotations }}
+{{- $podLabels := merge .Values.podLabels .Values.postgresql.podLabels }}
+{{- $imagePullSecrets := concat .Values.image.pullSecrets .Values.postgresql.image.pullSecrets }}
+{{- $podSecurityContext := merge .Values.podSecurityContext .Values.postgresql.podSecurityContext }}
+{{- $priorityClassName := default .Values.priorityClassName .Values.postgresql.priorityClassName }}
+{{- $schedulerName := default .Values.schedulerName .Values.postgresql.schedulerName }}
+{{- $topologySpreadConstraints := concat .Values.topologySpreadConstraints .Values.postgresql.topologySpreadConstraints }}
+{{- $hostAliases := concat .Values.hostAliases .Values.postgresql.hostAliases }}
+{{- $initContainers := concat .Values.initContainers .Values.postgresql.initContainers }}
+{{- $securityContext := merge .Values.securityContext .Values.postgresql.securityContext }}
+{{- $env := concat .Values.env .Values.postgresql.env }}
+{{- $volumeMounts := concat .Values.volumeMounts .Values.postgresql.volumeMounts }}
+{{- $volumes := concat .Values.volumes .Values.postgresql.volumes }}
+{{- $nodeSelector := merge .Values.nodeSelector .Values.postgresql.nodeSelector }}
+{{- $affinity := merge .Values.affinity .Values.postgresql.affinity }}
+{{- $tolerations := concat .Values.tolerations .Values.postgresql.tolerations }}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "simpaas-postgresql.postgresql.name" . }}
+  labels:
+    {{- include "simpaas-postgresql.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.postgresql.replicas }}
+  podManagementPolicy: {{ .Values.postgresql.podManagementPolicy }}
+  serviceName: {{ include "simpaas-postgresql.postgresql.headlessServiceName" . }}
+  {{- with .Values.postgresql.updateStrategy }}
+  updateStrategy:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- with .Values.postgresql.persistentVolumeClaimRetentionPolicy }}
+  persistentVolumeClaimRetentionPolicy:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "simpaas-postgresql.postgresql.labels" . | nindent 6 }}
+      {{- with $podLabels }}
+      {{- toYaml . | nindent 6 }}
+      {{- end }}
+  template:
+    metadata:
+      {{- with $podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "simpaas-postgresql.postgresql.labels" . | nindent 8 }}
+        {{- with $podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- with $imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "simpaas-postgresql.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml $podSecurityContext| nindent 8 }}
+      {{- if $priorityClassName }}
+      priorityClassName: {{ $priorityClassName }}
+      {{- end }}
+      {{- with $topologySpreadConstraints }}
+      topologySpreadConstraints:
+        {{ toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if .Values.postgresql.terminationGracePeriodSeconds }}
+      terminationGracePeriodSeconds: {{ .Values.postgresql.terminationGracePeriodSeconds }}
+      {{- end }}
+      {{- with $hostAliases }}
+      hostAliases:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $initContainers }}
+      initContainers:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: postgresql
+          securityContext:
+            {{- toYaml $securityContext | nindent 12 }}
+          image: {{ include "simpaas-postgresql.image" (dict "global" .Values.image "image" .Values.postgresql.image) }}
+          imagePullPolicy: {{ default .Values.image.pullPolicy .Values.postgresql.image.pullPolicy }}
+          {{- with .Values.postgresql.command }}
+          command:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.postgresql.args }}
+          args:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- if .Values.postgresql.lifecycle }}
+          lifecycle:
+            {{- toYaml .Values.postgresql.lifecycle | nindent 12 }}
+          {{- else }}
+          lifecycle:
+            preStop:
+              exec:
+                command:
+                  - ./pre-stop.sh
+                  - {{ .Values.postgresql.preStopDelayAfterPgStopSeconds | quote }}
+          {{- end }}
+          env:
+            - name: MY_POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: PGDATA
+              value: {{ printf "%s/data" .Values.postgresql.persistence.mountPath }}
+            - name: POSTGRES_DB
+              value: {{ .Values.db.postgres }}
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "simpaas-postgresql.secretName" . }}
+                  key: {{ .Values.secret.key.postgresPassword }}
+            - name: POSTGRES_USER
+              value: {{ .Values.user.postgres }}
+            - name: POSTGRESQL_PORT_NUMBER
+              value: {{ .Values.port | quote }}
+            - name: POSTGRESQL_VOLUME_DIR
+              value: {{ .Values.postgresql.persistence.mountPath }}
+            - name: REPMGR_NAMESPACE
+              value: {{ .Release.Namespace }}
+            - name: REPMGR_PARTNER_NODES
+              value: {{ range $i := until (int .Values.postgresql.replicas) }}{{ $i }}:{{ include "simpaas-postgresql.postgresql.name" $ }}-{{ $i }}.{{ include "simpaas-postgresql.postgresql.headlessServiceName" $ }}.{{ $.Release.Namespace }}.svc.{{ $.Values.clusterDomain }}:{{ $.Values.port }},{{ end }}
+            - name: REPMGR_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "simpaas-postgresql.secretName" . }}
+                  key: {{ .Values.secret.key.repmgrPassword }}
+            - name: REPMGR_PORT_NUMBER
+              value: {{ .Values.port | quote }}
+            - name: REPMGR_PRIMARY_HOST
+              value: {{ printf "%s-0.%s.%s.svc.%s" (include "simpaas-postgresql.postgresql.name" .) (include "simpaas-postgresql.postgresql.headlessServiceName" .) .Release.Namespace .Values.clusterDomain }}
+            - name: REPMGR_PRIMARY_PORT
+              value: {{ .Values.port | quote }}
+            - name: REPMGR_USERNAME
+              value: {{ .Values.user.repmgr }}
+            - name: REPMGR_DATABASE
+              value: {{ .Values.db.repmgr }}
+            - name: REPMGR_NODE_NAME
+              value: "$(MY_POD_NAME)"
+            - name: REPMGR_NODE_NETWORK_NAME
+              value: $(MY_POD_NAME).{{ include "simpaas-postgresql.postgresql.headlessServiceName" . }}.{{ .Release.Namespace }}.svc.{{ .Values.clusterDomain }}
+            {{- with $env }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          ports:
+            - name: postgresql
+              containerPort: {{ .Values.port }}
+              protocol: TCP
+          {{- if .Values.postgresql.livenessProbe.enabled }}
+          livenessProbe:
+            {{- if .Values.postgresql.livenessProbe.handler }}
+            {{- toYaml .Values.postgresql.livenessProbe.handler | nindent 12 }}
+            {{- else }}
+            exec:
+              command:
+                - bash
+                - -ec
+                - PGPASSWORD=$POSTGRES_PASSWORD psql -w -U {{ .Values.user.postgres }} -d {{ .Values.db.postgres }} -h 127.0.0.1 -p {{ .Values.port }} -c "SELECT 1"
+            {{- end }}
+            {{- include "simpaas-postgresql.probe" .Values.postgresql.livenessProbe | nindent 12 }}
+          {{- end }}
+          {{- if .Values.postgresql.readinessProbe.enabled }}
+          readinessProbe:
+            {{- if .Values.postgresql.readinessProbe.handler }}
+            {{- toYaml .Values.postgresql.readinessProbe.handler | nindent 12 }}
+            {{- else }}
+            exec:
+              command:
+                - bash
+                - -ec
+                - exec pg_isready -U {{ .Values.user.postgres }} -h 127.0.0.1 -p {{ .Values.port }}
+            {{- end }}
+            {{- include "simpaas-postgresql.probe" .Values.postgresql.readinessProbe | nindent 12 }}
+          {{- end }}
+          {{- if .Values.postgresql.startupProbe.enabled }}
+          startupProbe:
+            {{- if .Values.postgresql.startupProbe.handler }}
+            {{- toYaml .Values.postgresql.startupProbe.handler | nindent 12 }}
+            {{- else }}
+            exec:
+              command:
+                - bash
+                - -ec
+                - PGPASSWORD=$POSTGRES_PASSWORD psql -w -U {{ .Values.user.postgres }} -d {{ .Values.db.postgres }} -h 127.0.0.1 -p {{ .Values.port }} -c "SELECT 1"
+            {{- end }}
+            {{- include "simpaas-postgresql.probe" .Values.postgresql.startupProbe | nindent 12 }}
+          {{- end }}
+          resources:
+            {{- toYaml .Values.postgresql.resources | nindent 12 }}
+          volumeMounts:
+            - name: data
+              mountPath: {{ .Values.postgresql.persistence.mountPath }}
+            - name: empty-dir
+              mountPath: /opt/bitnami/postgresql/conf
+              subPath: postgresql-conf
+            - name: empty-dir
+              mountPath: /opt/bitnami/postgresql/tmp
+              subPath: postgresql-tmp
+            - name: empty-dir
+              mountPath: /opt/bitnami/repmgr/conf
+              subPath: repmgr-conf
+            - name: empty-dir
+              mountPath: /opt/bitnami/repmgr/logs
+              subPath: repmgr-logs
+            - name: empty-dir
+              mountPath: /opt/bitnami/repmgr/tmp
+              subPath: repmgr-tmp
+            - name: empty-dir
+              mountPath: /tmp
+              subPath: tmp
+            - name: hooks
+              mountPath: /pre-stop.sh
+              subPath: pre-stop.sh
+            - name: hooks
+              mountPath: /readiness-probe.sh
+              subPath: readiness-probe.sh
+            {{- with $volumeMounts }}
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      volumes:
+        - name: empty-dir
+          emptyDir: {}
+        - name: hooks
+          configMap:
+            name: {{ include "simpaas-postgresql.postgresql.name" . }}
+            defaultMode: 0755
+        {{- with $volumes }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with $nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+  volumeClaimTemplates:
+    - apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata:
+        name: data
+        labels:
+          {{- include "simpaas-postgresql.postgresql.labels" . | nindent 14 }}
+        {{- with .Values.postgresql.persistence.annotations }}
+        annotations:
+          {{- toYaml . | nindent 14 }}
+        {{- end }}
+      spec:
+        {{- if .Values.postgresql.persistence.storageClassName }}
+        storageClassName: {{ .Values.postgresql.persistence.storageClassName }}
+        {{- end }}
+        {{- with .Values.postgresql.persistence.accessModes }}
+        accessModes:
+          {{- toYaml . | nindent 14 }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.postgresql.persistence.size }}

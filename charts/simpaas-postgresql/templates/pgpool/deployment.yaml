@@ -1,0 +1,192 @@
+{{- $podAnnotations := merge .Values.podAnnotations .Values.pgpool.podAnnotations }}
+{{- $podLabels := merge .Values.podLabels .Values.pgpool.podLabels }}
+{{- $imagePullSecrets := concat .Values.image.pullSecrets .Values.pgpool.image.pullSecrets }}
+{{- $podSecurityContext := merge .Values.podSecurityContext .Values.pgpool.podSecurityContext }}
+{{- $priorityClassName := default .Values.priorityClassName .Values.pgpool.priorityClassName }}
+{{- $schedulerName := default .Values.schedulerName .Values.pgpool.schedulerName }}
+{{- $topologySpreadConstraints := concat .Values.topologySpreadConstraints .Values.pgpool.topologySpreadConstraints }}
+{{- $hostAliases := concat .Values.hostAliases .Values.pgpool.hostAliases }}
+{{- $initContainers := concat .Values.initContainers .Values.pgpool.initContainers }}
+{{- $securityContext := merge .Values.securityContext .Values.pgpool.securityContext }}
+{{- $env := concat .Values.env .Values.pgpool.env }}
+{{- $volumeMounts := concat .Values.volumeMounts .Values.pgpool.volumeMounts }}
+{{- $volumes := concat .Values.volumes .Values.pgpool.volumes }}
+{{- $nodeSelector := merge .Values.nodeSelector .Values.pgpool.nodeSelector }}
+{{- $affinity := merge .Values.affinity .Values.pgpool.affinity }}
+{{- $tolerations := concat .Values.tolerations .Values.pgpool.tolerations }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "simpaas-postgresql.pgpool.name" . }}
+  labels:
+    {{- include "simpaas-postgresql.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.pgpool.replicas }}
+  selector:
+    matchLabels:
+      {{- include "simpaas-postgresql.pgpool.labels" . | nindent 6 }}
+      {{- with $podLabels }}
+      {{- toYaml . | nindent 6 }}
+      {{- end }}
+  template:
+    metadata:
+      {{- with $podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "simpaas-postgresql.pgpool.labels" . | nindent 8 }}
+        {{- with $podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- with $imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "simpaas-postgresql.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml $podSecurityContext| nindent 8 }}
+      {{- if $priorityClassName }}
+      priorityClassName: {{ $priorityClassName }}
+      {{- end }}
+      {{- with $topologySpreadConstraints }}
+      topologySpreadConstraints:
+        {{ toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if .Values.pgpool.terminationGracePeriodSeconds }}
+      terminationGracePeriodSeconds: {{ .Values.pgpool.terminationGracePeriodSeconds }}
+      {{- end }}
+      {{- with $hostAliases }}
+      hostAliases:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $initContainers }}
+      initContainers:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: pgpool
+          securityContext:
+            {{- toYaml $securityContext | nindent 12 }}
+          image: {{ include "simpaas-postgresql.image" (dict "global" .Values.image "image" .Values.pgpool.image) }}
+          imagePullPolicy: {{ default .Values.image.pullPolicy .Values.pgpool.image.pullPolicy }}
+          {{- with .Values.pgpool.command }}
+          command:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.pgpool.args }}
+          args:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.pgpool.lifecycle }}
+          lifecycle:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          env:
+            - name: PGPOOL_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "simpaas-postgresql.secretName" . }}
+                  key: {{ .Values.secret.key.pgpoolAdminPassword }}
+            - name: PGPOOL_ADMIN_USERNAME
+              value: {{ .Values.pgpool.adminUser }}
+            - name: PGPOOL_BACKEND_NODES
+              value: {{ range $i := until (int .Values.postgresql.replicas) }}{{ $i }}:{{ include "simpaas-postgresql.postgresql.name" $ }}-{{ $i }}.{{ include "simpaas-postgresql.postgresql.headlessServiceName" $ }}:{{ $.Values.port }},{{ end }}
+            - name: PGPOOL_POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "simpaas-postgresql.secretName" . }}
+                  key: {{ .Values.secret.key.postgresPassword }}
+            - name: PGPOOL_POSTGRES_USERNAME
+              value: {{ .Values.user.postgres }}
+            - name: PGPOOL_SR_CHECK_DATABASE
+              value: {{ .Values.db.repmgr }}
+            - name: PGPOOL_SR_CHECK_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "simpaas-postgresql.secretName" . }}
+                  key: {{ .Values.secret.key.repmgrPassword }}
+            - name: PGPOOL_SR_CHECK_USER
+              value: {{ .Values.user.repmgr }}
+            {{- with $env }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          ports:
+            - name: postgresql
+              containerPort: {{ .Values.port }}
+              protocol: TCP
+          {{- if .Values.pgpool.livenessProbe.enabled }}
+          livenessProbe:
+            {{- if .Values.pgpool.livenessProbe.handler }}
+            {{- toYaml .Values.pgpool.livenessProbe.handler | nindent 12 }}
+            {{- else }}
+            exec:
+              command:
+                - /opt/bitnami/scripts/pgpool/healthcheck.sh
+            {{- end }}
+            {{- include "simpaas-postgresql.probe" .Values.pgpool.livenessProbe | nindent 12 }}
+          {{- end }}
+          {{- if .Values.pgpool.readinessProbe.enabled }}
+          readinessProbe:
+            {{- if .Values.pgpool.readinessProbe.handler }}
+            {{- toYaml .Values.pgpool.readinessProbe.handler | nindent 12 }}
+            {{- else }}
+            exec:
+              command:
+                - bash
+                - -ec
+                - PGPASSWORD=$PGPOOL_POSTGRES_PASSWORD psql -U {{ .Values.user.postgres }} -d {{ .Values.db.postgres }} -h /opt/bitnami/pgpool/tmp -tA -c "SELECT 1" >/dev/null
+            {{- end }}
+            {{- include "simpaas-postgresql.probe" .Values.pgpool.readinessProbe | nindent 12 }}
+          {{- end }}
+          {{- if .Values.pgpool.startupProbe.enabled }}
+          startupProbe:
+            {{- if .Values.pgpool.startupProbe.handler }}
+            {{- toYaml .Values.pgpool.startupProbe.handler | nindent 12 }}
+            {{- else }}
+            exec:
+              command:
+                - /opt/bitnami/scripts/pgpool/healthcheck.sh
+            {{- end }}
+            {{- include "simpaas-postgresql.probe" .Values.pgpool.startupProbe | nindent 12 }}
+          {{- end }}
+          resources:
+            {{- toYaml .Values.pgpool.resources | nindent 12 }}
+          volumeMounts:
+            - name: empty-dir
+              mountPath: /opt/bitnami/pgpool/conf
+              subPath: pgpool-conf
+            - name: empty-dir
+              mountPath: /opt/bitnami/pgpool/etc
+              subPath: pgpool-etc
+            - name: empty-dir
+              mountPath: /opt/bitnami/pgpool/logs
+              subPath: pgpool-logs
+            - name: empty-dir
+              mountPath: /opt/bitnami/pgpool/tmp
+              subPath: pgpool-tmp
+            - name: empty-dir
+              mountPath: /tmp
+              subPath: tmp
+            {{- with $volumeMounts }}
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      volumes:
+        - name: empty-dir
+          emptyDir: {}
+        {{- with $volumes }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with $nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

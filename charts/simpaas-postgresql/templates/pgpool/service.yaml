@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "simpaas-postgresql.pgpool.name" . }}
+  labels:
+    {{- include "simpaas-postgresql.pgpool.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.pgpool.service.type }}
+  ports:
+    - port: {{ .Values.pgpool.service.port }}
+      targetPort: postgresql
+      protocol: TCP
+      name: postgresql
+  selector:
+    {{- include "simpaas-postgresql.pgpool.labels" . | nindent 4 }}

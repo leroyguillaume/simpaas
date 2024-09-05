@@ -1,0 +1,31 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "simpaas-postgresql.postgresql.name" . }}
+  labels:
+    {{- include "simpaas-postgresql.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.postgresql.service.type }}
+  ports:
+    - port: {{ .Values.postgresql.service.port }}
+      targetPort: postgresql
+      protocol: TCP
+      name: postgresql
+  selector:
+    {{- include "simpaas-postgresql.postgresql.labels" . | nindent 4 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "simpaas-postgresql.postgresql.headlessServiceName" . }}
+  labels:
+    {{- include "simpaas-postgresql.labels" . | nindent 4 }}
+spec:
+  clusterIP: None
+  ports:
+    - port: {{ .Values.postgresql.service.port }}
+      targetPort: postgresql
+      protocol: TCP
+      name: postgresql
+  selector:
+    {{- include "simpaas-postgresql.postgresql.labels" . | nindent 4 }}

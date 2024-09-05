@@ -1,0 +1,10 @@
+apiVersion: simpaas.gleroy.dev/v1
+kind: Service
+metadata:
+  name: postgresql
+spec:
+  chart: charts/simpaas-postgresql
+  values: |
+    labels:
+      simpaas.gleroy.dev/service: {{ service }}
+      simpaas.gleroy.dev/service-instance: {{ name }}
