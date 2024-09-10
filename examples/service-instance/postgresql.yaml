@@ -1,6 +1,6 @@
 apiVersion: simpaas.gleroy.dev/v1
 kind: ServiceInstance
 metadata:
-  name: postgresql
+  name: my-pg
 spec:
   service: postgresql

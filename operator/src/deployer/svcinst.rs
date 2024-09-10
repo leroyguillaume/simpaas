@@ -133,6 +133,7 @@ mod test {
                             },
                             spec: ServiceSpec {
                                 chart: "chart".into(),
+                                consumes: Default::default(),
                                 monitor_delay: 0,
                                 values: "values".into(),
                                 version: None,

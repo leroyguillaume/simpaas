@@ -14,6 +14,45 @@ pub mod tracer;
 
 // Specs
 
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DatabaseConsumable {
+    pub creation_job: String,
+    pub drop_job: String,
+    pub host: String,
+    #[serde(default = "default_database_password_secret")]
+    pub password_secret: SecretRef,
+    pub port: u32,
+}
+
+#[derive(Clone, CustomResource, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[kube(
+    group = "simpaas.gleroy.dev",
+    version = "v1",
+    kind = "Database",
+    doc = "A database",
+    plural = "databases",
+    namespaced,
+    shortname = "db",
+    status = "DatabaseStatus"
+)]
+#[serde(rename_all = "camelCase")]
+pub struct DatabaseSpec {
+    #[schemars(schema_with = "property_immutable")]
+    pub database: String,
+    #[schemars(schema_with = "property_immutable")]
+    pub instance: String,
+    #[schemars(schema_with = "property_immutable")]
+    pub user: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SecretRef {
+    pub key: String,
+    pub name: String,
+}
+
 #[derive(Clone, CustomResource, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[kube(
     group = "simpaas.gleroy.dev",
@@ -27,10 +66,18 @@ pub mod tracer;
 #[serde(rename_all = "camelCase")]
 pub struct ServiceSpec {
     pub chart: String,
+    #[serde(default)]
+    pub consumes: ServiceConsumable,
     #[serde(default = "default_monitor_delay")]
     pub monitor_delay: u32,
     pub values: String,
     pub version: Option<String>,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ServiceConsumable {
+    pub database: Option<DatabaseConsumable>,
 }
 
 #[derive(Clone, CustomResource, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
@@ -55,6 +102,16 @@ pub struct ServiceInstanceSpec {
 // Statuses
 
 #[derive(Clone, Copy, Debug, Deserialize, EnumDisplay, Eq, JsonSchema, PartialEq, Serialize)]
+pub enum DatabaseStatus {
+    Created,
+    Creating,
+    CreationFailed,
+    DropFailed,
+    Dropping,
+    Unknown,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, EnumDisplay, Eq, JsonSchema, PartialEq, Serialize)]
 pub enum DeployableStatus {
     Healthy,
     Degraded,
@@ -65,6 +122,13 @@ pub enum DeployableStatus {
 }
 
 // Defaults
+
+fn default_database_password_secret() -> SecretRef {
+    SecretRef {
+        key: "password".into(),
+        name: "db-creds-{{ name }}".into(),
+    }
+}
 
 fn default_monitor_delay() -> u32 {
     30

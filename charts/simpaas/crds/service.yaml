@@ -23,6 +23,43 @@ spec:
             properties:
               chart:
                 type: string
+              consumes:
+                default:
+                  database: null
+                properties:
+                  database:
+                    nullable: true
+                    properties:
+                      creationJob:
+                        type: string
+                      dropJob:
+                        type: string
+                      host:
+                        type: string
+                      passwordSecret:
+                        default:
+                          key: password
+                          name: db-creds-{{ name }}
+                        properties:
+                          key:
+                            type: string
+                          name:
+                            type: string
+                        required:
+                        - key
+                        - name
+                        type: object
+                      port:
+                        format: uint32
+                        minimum: 0.0
+                        type: integer
+                    required:
+                    - creationJob
+                    - dropJob
+                    - host
+                    - port
+                    type: object
+                type: object
               monitorDelay:
                 default: 30
                 format: uint32

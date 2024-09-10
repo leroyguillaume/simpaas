@@ -1,5 +1,7 @@
 // Types
 
+use std::string::FromUtf8Error;
+
 pub type Result<VALUE = ()> = std::result::Result<VALUE, Error>;
 
 // Error
@@ -26,10 +28,28 @@ pub enum Error {
         #[source]
         kube::Error,
     ),
+    #[error("service doesn't consume this kind of resource")]
+    ResourceNotConsumed,
+    #[error("service instance doesn't exist")]
+    ServiceInstanceNotFound,
     #[error("service doesn't exist")]
     ServiceNotFound,
+    #[error("job doesn't have name")]
+    UnnamedJob,
     #[error("resource doesn't have name")]
     UnnamedResource,
     #[error("resource doesn't have namespace")]
     UnnamespacedResource,
+    #[error("utf8 error: {0}")]
+    Utf8(
+        #[from]
+        #[source]
+        FromUtf8Error,
+    ),
+    #[error("yaml error: {0}")]
+    Yaml(
+        #[from]
+        #[source]
+        serde_yaml::Error,
+    ),
 }

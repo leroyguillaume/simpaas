@@ -4,6 +4,7 @@ use crate::{ReconcilableResource, ReconcilableResourceEvent, Status};
 
 // Mods
 
+pub mod db;
 pub mod dep;
 
 // Consts

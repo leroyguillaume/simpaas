@@ -5,7 +5,7 @@ use std::{
 
 use k8s_openapi::NamespaceResourceScope;
 use kube::{
-    api::{ListParams, ObjectMeta, PartialObjectMetaExt, Patch, PatchParams},
+    api::{DeleteParams, ListParams, ObjectMeta, PartialObjectMetaExt, Patch, PatchParams},
     runtime::events::{Event, Recorder, Reporter},
     Api, Client, Resource, Result,
 };
@@ -21,6 +21,21 @@ const MANAGER: &str = "simpaas";
 
 #[cfg_attr(feature = "mock", mockall::automock)]
 pub trait KubeClient: Send + Sync {
+    fn delete_from<
+        RESOURCE: Clone
+            + Debug
+            + DeserializeOwned
+            + Resource<DynamicType = (), Scope = NamespaceResourceScope>
+            + Send
+            + Serialize
+            + Sync
+            + 'static,
+    >(
+        &self,
+        ns: &str,
+        name: &str,
+    ) -> impl Future<Output = Result<()>> + Send;
+
     fn get<
         RESOURCE: Clone
             + Debug
@@ -64,6 +79,22 @@ pub trait KubeClient: Send + Sync {
         ns: &str,
         sel: &str,
     ) -> impl Future<Output = Result<Vec<RESOURCE>>> + Send;
+
+    fn patch_from<
+        RESOURCE: Clone
+            + Debug
+            + DeserializeOwned
+            + Resource<DynamicType = (), Scope = NamespaceResourceScope>
+            + Send
+            + Serialize
+            + Sync
+            + 'static,
+    >(
+        &self,
+        ns: &str,
+        name: &str,
+        res: &RESOURCE,
+    ) -> impl Future<Output = Result<()>> + Send;
 
     fn patch_metadata_from<
         RESOURCE: Clone
@@ -150,6 +181,27 @@ impl DefaultKubeClient {
 }
 
 impl KubeClient for DefaultKubeClient {
+    #[instrument(skip(self, ns, name), fields(resource.api_version = %RESOURCE::api_version(&()), resource.kind = %RESOURCE::kind(&()), resource.name = name, resource.namespace = ns))]
+    async fn delete_from<
+        RESOURCE: Clone
+            + Debug
+            + DeserializeOwned
+            + Resource<DynamicType = (), Scope = NamespaceResourceScope>
+            + Send
+            + Serialize
+            + Sync,
+    >(
+        &self,
+        ns: &str,
+        name: &str,
+    ) -> Result<()> {
+        debug!("deleting resource");
+        let api: Api<RESOURCE> = Api::namespaced(self.kube.clone(), ns);
+        let params = DeleteParams::default();
+        api.delete(name, &params).await?;
+        Ok(())
+    }
+
     #[instrument(skip(self, name), fields(resource.api_version = %RESOURCE::api_version(&()), resource.kind = %RESOURCE::kind(&()), resource.name = name))]
     async fn get<
         RESOURCE: Clone
@@ -207,6 +259,29 @@ impl KubeClient for DefaultKubeClient {
         };
         let list = api.list(&params).await?;
         Ok(list.items)
+    }
+
+    #[instrument(skip(self, ns, name, res), fields(resource.api_version = %RESOURCE::api_version(&()), resource.kind = %RESOURCE::kind(&()), resource.name = name, resource.namespace = ns))]
+    async fn patch_from<
+        RESOURCE: Clone
+            + Debug
+            + DeserializeOwned
+            + Resource<DynamicType = (), Scope = NamespaceResourceScope>
+            + Send
+            + Serialize
+            + Sync,
+    >(
+        &self,
+        ns: &str,
+        name: &str,
+        res: &RESOURCE,
+    ) -> Result<()> {
+        debug!("patching resource");
+        let api: Api<RESOURCE> = Api::namespaced(self.kube.clone(), ns);
+        let params = PatchParams::apply(MANAGER);
+        let patch = Patch::Apply(res);
+        api.patch(name, &params, &patch).await?;
+        Ok(())
     }
 
     #[instrument(skip(self, ns, name, meta), fields(resource.api_version = %RESOURCE::api_version(&()), resource.kind = %RESOURCE::kind(&()), resource.name = name, resource.namespace = ns))]

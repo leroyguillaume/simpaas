@@ -8,3 +8,116 @@ spec:
     labels:
       simpaas.gleroy.dev/service: {{ service }}
       simpaas.gleroy.dev/service-instance: {{ name }}
+  consumes:
+    database:
+      host: '{{ instance }}-pgpool.{{ namespace }}.svc.{{ domain }}'
+      port: 5432
+      creationJob: |
+        apiVersion: batch/v1
+        kind: Job
+        metadata:
+          name: database-creation-{{ name }}
+          namespace: {{ namespace }}
+          labels:
+            simpaas.gleroy.dev/database: {{ name }}
+            simpaas.gleroy.dev/job-kind: creation
+            simpaas.gleroy.dev/service: {{ service }}
+            simpaas.gleroy.dev/service-instance: {{ instance }}
+        spec:
+          template:
+            metadata:
+              labels:
+                simpaas.gleroy.dev/database: {{ name }}
+                simpaas.gleroy.dev/service: {{ service }}
+                simpaas.gleroy.dev/service-instance: {{ instance }}
+            spec:
+              restartPolicy: OnFailure
+              containers:
+              - name: creation
+                image: bitnami/postgresql
+                command:
+                - sh
+                - -xec
+                args:
+                - |
+                  if psql -h $HOST -p $PORT -U $PG_USER -tc "SELECT 1 FROM pg_roles WHERE rolname = '$DB_USER'" | grep -q 1; then
+                    echo "user $DB_USER already created"
+                  else
+                    echo "creating user $DB_USER"
+                    psql -h $HOST -p $PORT -U $PG_USER -c "CREATE ROLE $DB_USER LOGIN PASSWORD '$DB_USER_PASSWORD'"
+                    echo "user $DB_USER created"
+                  fi
+                  if psql -h $HOST -p $PORT -U $PG_USER -tc "SELECT 1 FROM pg_dataabse WHERE datname = '$NAME'" | grep -q 1; then
+                    echo "database $NAME already created"
+                  else
+                    echo "creating database $NAME"
+                    psql -h $HOST -p $PORT -U $PG_USER -c "CREATE DATABASE $NAME OWNER $DB_USER"
+                    echo "database $NAME created"
+                  fi
+                env:
+                - name: HOST
+                  value: {{ instance }}-pgpool.{{ namespace }}.svc.{{ domain }}
+                - name: PORT
+                  value: "5432"
+                - name: NAME
+                  value: {{ database }}
+                - name: PG_USER
+                  value: postgres
+                - name: PGPASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ instance }}-creds
+                      key: postgres-password
+                - name: DB_USER
+                  value: {{ user }}
+                - name: DB_USER_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ passwordSecret.name }}
+                      key: {{ passwordSecret.key }}
+      dropJob: |
+        apiVersion: batch/v1
+        kind: Job
+        metadata:
+          name: database-drop-{{ name }}
+          namespace: {{ namespace }}
+          labels:
+            simpaas.gleroy.dev/database: {{ name }}
+            simpaas.gleroy.dev/job-kind: deletion
+            simpaas.gleroy.dev/service: {{ service }}
+            simpaas.gleroy.dev/service-instance: {{ instance }}
+        spec:
+          template:
+            metadata:
+              labels:
+                simpaas.gleroy.dev/database: {{ name }}
+                simpaas.gleroy.dev/service: {{ service }}
+                simpaas.gleroy.dev/service-instance: {{ instance }}
+            spec:
+              restartPolicy: OnFailure
+              containers:
+              - name: drop
+                image: bitnami/postgresql
+                command:
+                - sh
+                - -xec
+                args:
+                - |
+                  psql -h $HOST -p $PORT -U $PG_USER -c "DROP DATABASE IF EXISTS $NAME (FORCE)"
+                  psql -h $HOST -p $PORT -U $PG_USER -c "DROP ROLE IF EXISTS $DB_USER"
+                env:
+                - name: HOST
+                  value: {{ instance }}-pgpool.{{ namespace }}.svc.{{ domain }}
+                - name: PORT
+                  value: "5432"
+                - name: NAME
+                  value: {{ database }}
+                - name: PG_USER
+                  value: postgres
+                - name: PGPASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ instance }}-creds
+                      key: postgres-password
+                - name: DB_USER
+                  value: {{ user }}

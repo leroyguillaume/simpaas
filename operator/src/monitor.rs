@@ -1,6 +1,9 @@
 use std::{future::Future, ops::Add, sync::Arc};
 
-use k8s_openapi::api::apps::v1::{Deployment, DeploymentStatus, StatefulSet, StatefulSetStatus};
+use k8s_openapi::api::{
+    apps::v1::{Deployment, DeploymentStatus, StatefulSet, StatefulSetStatus},
+    batch::v1::{Job, JobStatus},
+};
 use simpaas_core::kube::KubeClient;
 use tracing::instrument;
 
@@ -43,6 +46,34 @@ impl From<StatefulSetStatus> for AppStats {
     }
 }
 
+// JobStats
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct JobStats {
+    pub expected: i32,
+    pub succeeded: i32,
+}
+
+impl Add for JobStats {
+    type Output = Self;
+
+    fn add(self, stats: Self) -> Self::Output {
+        Self {
+            expected: self.expected + stats.expected,
+            succeeded: self.succeeded + stats.succeeded,
+        }
+    }
+}
+
+impl From<JobStatus> for JobStats {
+    fn from(status: JobStatus) -> Self {
+        Self {
+            expected: 1,
+            succeeded: status.completion_time.is_some().into(),
+        }
+    }
+}
+
 // Traits
 
 #[cfg_attr(test, mockall::automock)]
@@ -52,6 +83,12 @@ pub trait Monitor: Send + Sync {
         ns: &str,
         sel: &str,
     ) -> impl Future<Output = Result<Option<AppStats>>> + Send;
+
+    fn monitor_jobs(
+        &self,
+        ns: &str,
+        sel: &str,
+    ) -> impl Future<Output = Result<Option<JobStats>>> + Send;
 }
 
 // DefaultMonitor
@@ -97,12 +134,27 @@ impl<KUBE: KubeClient> Monitor for DefaultMonitor<KUBE> {
             Ok(None)
         }
     }
+
+    #[instrument(skip(self, ns, sel), fields(resource.namespace = ns))]
+    async fn monitor_jobs(&self, ns: &str, sel: &str) -> Result<Option<JobStats>> {
+        let stats = self
+            .kube
+            .list_from::<Job>(ns, sel)
+            .await?
+            .into_iter()
+            .filter_map(|job| job.status)
+            .map(JobStats::from)
+            .reduce(|acc, stats| acc + stats);
+        Ok(stats)
+    }
 }
 
 // Tests
 
 #[cfg(test)]
 mod test {
+    use chrono::Utc;
+    use k8s_openapi::apimachinery::pkg::apis::meta::v1::Time;
     use mockall::predicate::*;
     use simpaas_core::kube::MockKubeClient;
 
@@ -303,6 +355,84 @@ mod test {
                 let expected = AppStats {
                     expected: 6,
                     running: 1,
+                };
+                assert_eq!(stats, expected);
+            }
+        }
+
+        mod monitor_jobs {
+            use super::*;
+
+            // Data
+
+            #[derive(Clone)]
+            struct Data {
+                jobs: Vec<Job>,
+                namespace: &'static str,
+                selector: &'static str,
+            }
+
+            impl Default for Data {
+                fn default() -> Self {
+                    Self {
+                        jobs: vec![],
+                        namespace: "namespace",
+                        selector: "selector",
+                    }
+                }
+            }
+
+            // Tests
+
+            async fn test(data: Data) -> Option<JobStats> {
+                init_tracer();
+                let mut kube = MockKubeClient::new();
+                kube.expect_list_from::<Job>()
+                    .with(eq(data.namespace), eq(data.selector))
+                    .times(1)
+                    .returning({
+                        let deps = data.jobs.clone();
+                        move |_, _| async_ok(deps.clone())
+                    });
+                let monitor = DefaultMonitor {
+                    kube: Arc::new(kube),
+                };
+                monitor
+                    .monitor_jobs(data.namespace, data.selector)
+                    .await
+                    .unwrap()
+            }
+
+            #[tokio::test]
+            async fn none() {
+                let data = Data::default();
+                let stats = test(data).await;
+                assert!(stats.is_none());
+            }
+
+            #[tokio::test]
+            async fn stats() {
+                let data = Data {
+                    jobs: vec![
+                        Job::default(),
+                        Job {
+                            status: Some(JobStatus::default()),
+                            ..Default::default()
+                        },
+                        Job {
+                            status: Some(JobStatus {
+                                completion_time: Some(Time(Utc::now())),
+                                ..Default::default()
+                            }),
+                            ..Default::default()
+                        },
+                    ],
+                    ..Default::default()
+                };
+                let stats = test(data).await.unwrap();
+                let expected = JobStats {
+                    expected: 2,
+                    succeeded: 1,
                 };
                 assert_eq!(stats, expected);
             }

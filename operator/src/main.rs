@@ -6,6 +6,7 @@ use std::{
 
 use clap::Parser;
 use ctrl::controller;
+use db::DefaultDatabaseManager;
 use deployer::svcinst::ServiceInstanceDeployer;
 use err::Result;
 use hasher::Hasher;
@@ -16,14 +17,14 @@ use kube::{
     Api, Client, Resource,
 };
 use monitor::DefaultMonitor;
-use reconciler::dep::DeployableReconciler;
+use reconciler::{db::DatabaseReconciler, dep::DeployableReconciler};
 use renderer::LiquidRenderer;
 use serde::{de::DeserializeOwned, Serialize};
 use simpaas_core::{
     kube::{DefaultKubeClient, KubeClient},
     process::wait_for_sigint_or_sigterm,
     tracer::init_tracer,
-    DeployableStatus, Service, ServiceInstance,
+    Database, DatabaseStatus, DeployableStatus, Service, ServiceInstance,
 };
 use tokio::{sync::broadcast::channel, task::JoinSet};
 use tracing::{debug, info, warn};
@@ -33,27 +34,34 @@ use tracing::{debug, info, warn};
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let (stop_tx, stop_rx) = channel(1);
+    let mut jobs = JoinSet::new();
     let args = Args::parse();
     let requeue_delay = std::time::Duration::from_secs(args.requeue_delay);
     init_tracer(args.log_filter)?;
     let kube = Client::try_default().await?;
     let svc_inst_api: Api<ServiceInstance> = Api::all(kube.clone());
+    let db_api: Api<Database> = Api::all(kube.clone());
     let kube = Arc::new(DefaultKubeClient::new(args.pod_name, kube));
     let helm = Arc::new(DefaultHelmRunner::new(args.helm_bin));
     let renderer = Arc::new(LiquidRenderer::new());
     let monitor = Arc::new(DefaultMonitor::new(kube.clone()));
-    let svc_inst_deployer = ServiceInstanceDeployer::new(helm, kube.clone(), renderer);
-    let svc_inst_reconciler = DeployableReconciler::new(svc_inst_deployer, kube.clone(), monitor);
+    let svc_inst_deployer = ServiceInstanceDeployer::new(helm, kube.clone(), renderer.clone());
+    let svc_inst_reconciler =
+        DeployableReconciler::new(svc_inst_deployer, kube.clone(), monitor.clone());
     let svc_inst_ctrl = controller(
         requeue_delay,
         svc_inst_api,
-        kube,
+        kube.clone(),
         svc_inst_reconciler,
-        stop_rx,
+        stop_tx.subscribe(),
     );
-    let mut jobs = JoinSet::new();
     jobs.spawn(svc_inst_ctrl);
     debug!("service instance controller started");
+    let db_mgr = DefaultDatabaseManager::new(args.cluster_domain, kube.clone(), renderer);
+    let db_reconciler = DatabaseReconciler::new(db_mgr, monitor);
+    let db_ctrl = controller(requeue_delay, db_api, kube, db_reconciler, stop_rx);
+    jobs.spawn(db_ctrl);
+    debug!("database controller started");
     info!("operator started");
     wait_for_sigint_or_sigterm().await?;
     stop_tx.send(()).ok();
@@ -72,23 +80,33 @@ async fn main() -> anyhow::Result<()> {
 mod clock;
 mod cmd;
 mod ctrl;
+mod db;
 mod deployer;
 mod err;
 mod hasher;
 mod helm;
 mod monitor;
+mod pwd;
 mod reconciler;
 mod renderer;
 
 // Consts
 
+const ACTION_CREATING: &str = "Creating";
 const ACTION_DEPLOYING: &str = "Deploying";
+const ACTION_DROPPING: &str = "Dropping";
 const ACTION_MONITORING: &str = "Monitoring";
 const ACTION_UNDEPLOYING: &str = "Undeploying";
 
+const JOB_KIND_CREATION: &str = "creation";
+const JOB_KIND_DELETION: &str = "deletion";
+
+const LABEL_DATABASE: &str = "simpaas.gleroy.dev/database";
+const LABEL_JOB_KIND: &str = "simpaas.gleroy.dev/job-kind";
 const LABEL_SERVICE_INSTANCE: &str = "simpaas.gleroy.dev/service-instance";
 const LABEL_SERVICE: &str = "simpaas.gleroy.dev/service";
 
+const REASON_CREATED: &str = "Created";
 const REASON_DEPLOYED: &str = "Deployed";
 const REASON_FAILED: &str = "Failed";
 
@@ -97,6 +115,13 @@ const REASON_FAILED: &str = "Failed";
 #[derive(Clone, Debug, Eq, Parser, PartialEq)]
 #[command(version)]
 struct Args {
+    #[arg(
+        long,
+        env,
+        default_value = "cluster.local",
+        long_help = "Domain of Kubernetes cluster"
+    )]
+    cluster_domain: String,
     #[arg(long, env, default_value = "helm", long_help = "Path to Helm binary")]
     helm_bin: String,
     #[arg(
@@ -149,6 +174,16 @@ trait Status: Clone + Copy + Debug + DeserializeOwned + Display + Send + Seriali
 // Events
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+enum DatabaseEvent {
+    Created,
+    CreationFailed(String),
+    DropFailed(String),
+    MonitoringFailed(String),
+}
+
+impl ReconcilableResourceEvent for DatabaseEvent {}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 enum DeployableEvent {
     Deployed,
     DeploymentFailed(String),
@@ -157,6 +192,18 @@ enum DeployableEvent {
 }
 
 impl ReconcilableResourceEvent for DeployableEvent {}
+
+// Database
+
+impl ReconcilableResource<DatabaseStatus> for Database {
+    fn status(&self) -> Option<DatabaseStatus> {
+        self.status
+    }
+}
+
+// DatabaseStatus
+
+impl Status for DatabaseStatus {}
 
 // DeployableStatus
 
@@ -194,6 +241,41 @@ impl ReconcilableResource<DeployableStatus> for ServiceInstance {
 }
 
 // Event
+
+impl From<DatabaseEvent> for Event {
+    fn from(evt: DatabaseEvent) -> Self {
+        match evt {
+            DatabaseEvent::Created => Self {
+                action: ACTION_CREATING.into(),
+                note: Some("Successfully created".into()),
+                reason: REASON_CREATED.into(),
+                type_: EventType::Normal,
+                secondary: None,
+            },
+            DatabaseEvent::CreationFailed(err) => Self {
+                action: ACTION_CREATING.into(),
+                note: Some(format!("Failed to create: {err}")),
+                reason: REASON_FAILED.into(),
+                type_: EventType::Warning,
+                secondary: None,
+            },
+            DatabaseEvent::DropFailed(err) => Self {
+                action: ACTION_DROPPING.into(),
+                note: Some(format!("Failed to drop: {err}")),
+                reason: REASON_FAILED.into(),
+                type_: EventType::Warning,
+                secondary: None,
+            },
+            DatabaseEvent::MonitoringFailed(err) => Self {
+                action: ACTION_MONITORING.into(),
+                note: Some(format!("Failed to monitor: {err}")),
+                reason: REASON_FAILED.into(),
+                type_: EventType::Warning,
+                secondary: None,
+            },
+        }
+    }
+}
 
 impl From<DeployableEvent> for Event {
     fn from(evt: DeployableEvent) -> Self {
@@ -234,6 +316,7 @@ impl From<DeployableEvent> for Event {
 mod test {
     use std::{future::Future, pin::Pin, sync::Arc};
 
+    use k8s_openapi::api::{batch::v1::Job, core::v1::Secret};
     use mockall::{predicate::*, Predicate};
 
     use super::*;
@@ -242,6 +325,10 @@ mod test {
 
     macro_rules! eq_resource {
         ($ident:ident, $ty:ty) => {
+            eq_resource!($ident, $ty, spec);
+        };
+
+        ($ident:ident, $ty:ty, $spec:ident) => {
             pub fn $ident(expected: &$ty) -> impl Predicate<$ty> {
                 let expected = expected.clone();
                 function(move |res: &$ty| {
@@ -249,7 +336,7 @@ mod test {
                         && res.metadata.namespace == expected.metadata.namespace
                         && res.metadata.annotations == expected.metadata.annotations
                         && res.metadata.labels == expected.metadata.labels
-                        && res.spec == expected.spec
+                        && res.$spec == expected.$spec
                 })
             }
         };
@@ -284,6 +371,12 @@ mod test {
                 && evt.type_ == expected.type_
         })
     }
+
+    eq_resource!(eq_database, Database);
+
+    eq_resource!(eq_job, Job);
+
+    eq_resource!(eq_secret, Secret, data);
 
     eq_resource!(eq_service_instance, ServiceInstance);
 
