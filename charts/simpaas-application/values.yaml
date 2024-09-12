@@ -1,0 +1,56 @@
+nameOverride: ""
+
+image:
+  registry: ""
+  pullSecrets: []
+  pullPolicy: IfNotPresent
+
+labels: {}
+
+podAnnotations: {}
+podLabels: {}
+serviceAnnotations: {}
+serviceLabels: {}
+
+podSecurityContext: {}
+securityContext: {}
+
+priotityClassName: ""
+
+schedulerName: ""
+
+topologySpreadConstraints: []
+
+hostAliases: []
+
+initContainers: []
+
+env: []
+
+volumeMounts: []
+volumes: []
+
+nodeSelector: {}
+affinity: {}
+tolerations: []
+
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+  automount: true
+
+ingress:
+  create: false
+
+  labels: {}
+  annotations: {}
+
+  ingressClassName: ""
+
+  rules: []
+  tls: []
+
+components: []
+
+services: []

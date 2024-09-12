@@ -52,14 +52,15 @@ impl<HELM: HelmRunner, KUBE: KubeClient, RENDERER: Renderer> Deployer<ServiceIns
             "service": svc_inst.spec.service,
             "values": svc_inst.spec.values,
         });
-        self.renderer.render(&svc.spec.values, &vars, &mut file)?;
+        self.renderer
+            .render(&svc.spec.chart.values, &vars, &mut file)?;
         self.helm
             .upgrade(
                 ns,
                 name,
-                &svc.spec.chart,
+                &svc.spec.chart.name,
                 file.path(),
-                svc.spec.version.as_deref(),
+                svc.spec.chart.version.as_deref(),
             )
             .await?;
         info!("service instance deployed");
@@ -82,7 +83,7 @@ mod test {
 
     use kube::api::ObjectMeta;
     use mockall::predicate::*;
-    use simpaas_core::{kube::MockKubeClient, Service, ServiceInstanceSpec, ServiceSpec};
+    use simpaas_core::{kube::MockKubeClient, Chart, Service, ServiceInstanceSpec, ServiceSpec};
 
     use crate::{helm::MockHelmRunner, renderer::MockRenderer, test::*};
 
@@ -132,11 +133,13 @@ mod test {
                                 ..Default::default()
                             },
                             spec: ServiceSpec {
-                                chart: "chart".into(),
+                                chart: Chart {
+                                    name: "chart".into(),
+                                    values: "values".into(),
+                                    version: None,
+                                },
                                 consumes: Default::default(),
                                 monitor_delay: 0,
-                                values: "values".into(),
-                                version: None,
                             },
                         },
                     }
@@ -166,9 +169,9 @@ mod test {
                             let temp_filepath = temp_filepath.lock().unwrap().clone().unwrap();
                             ns == data.namespace
                                 && name == data.name
-                                && chart == data.service.spec.chart
+                                && chart == data.service.spec.chart.name
                                 && values_filepath == temp_filepath
-                                && version.map(String::from) == data.service.spec.version
+                                && version.map(String::from) == data.service.spec.chart.version
                         }
                     })
                     .times(mocks.upgrade as usize)
@@ -190,7 +193,7 @@ mod test {
                 });
                 renderer
                     .expect_render()
-                    .with(eq(data.service.spec.values), eq(vars), always())
+                    .with(eq(data.service.spec.chart.values), eq(vars), always())
                     .times(mocks.render as usize)
                     .returning({
                         let temp_filepath = temp_filepath.clone();

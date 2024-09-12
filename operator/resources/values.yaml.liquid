@@ -1,0 +1,58 @@
+{%- if ingressRules.size > 0 %}
+ingress:
+  create: true
+  rules:
+    {%- for domainAndRules in ingressRules %}
+    - host: {{ domainAndRules[0] }}
+      http:
+        paths:
+          {%- for rule in domainAndRules[1] %}
+          - path: {{ rule.path }}
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ name }}-{{ rule.service }}
+                port:
+                  number: {{rule.port }}
+          {%- endfor %}
+    {%- endfor %}
+  {%- if tlsDomains.size > 0 %}
+  tls:
+    - secretName: {{ name }}-tls
+      hosts:
+        {%- for domain in tlsDomains %}
+        - {{ domain }}
+        {%- endfor %}
+    {%- endif %}
+{%- endif %}
+
+{%- if containers.size > 0 %}
+components:
+  {%- for container in containers %}
+  - name: {{ container.name  }}
+    image:
+      repository: {{ container.image }}
+      tag: {{ container.tag }}
+    {%- if container.exposes.size > 0 %}
+    ports:
+      {%- for exposition in container.exposes %}
+      - containerPort: {{ exposition.port }}
+      {%- endfor %}
+    {%- endif %}
+  {%- endfor %}
+{%- endif %}
+
+{%- if services.size > 0 %}
+services:
+  {%- for service in services %}
+  - name: {{ service.name }}
+    ports:
+      {%- for exposition in service.exposes %}
+      - port: {{ exposition.port }}
+        targetPort: {{ exposition.port }}
+      {%- endfor %}
+    selector:
+      simpaas.gleroy.dev/application: {{ name }}
+      simpaas.gleroy.dev/application-component: {{ service.name }}
+  {%- endfor %}
+{%- endif %}

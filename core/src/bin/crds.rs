@@ -5,7 +5,7 @@ use std::{
 
 use clap::Parser;
 use kube::CustomResourceExt;
-use simpaas_core::{tracer::init_tracer, Database, Service, ServiceInstance};
+use simpaas_core::{tracer::init_tracer, Application, Database, Service, ServiceInstance};
 use tracing::debug;
 
 // Main
@@ -16,6 +16,7 @@ fn main() -> anyhow::Result<()> {
     debug!("creating output directory");
     create_dir_all(&args.output)?;
     let crds = [
+        ("application", Application::crd()),
         ("database", Database::crd()),
         ("service", Service::crd()),
         ("service-instance", ServiceInstance::crd()),

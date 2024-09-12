@@ -4,6 +4,7 @@ use crate::{err::Result, DeployableResource};
 
 // Mods
 
+pub mod app;
 pub mod svcinst;
 
 // Traits

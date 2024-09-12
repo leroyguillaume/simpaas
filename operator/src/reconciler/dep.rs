@@ -240,7 +240,7 @@ mod test {
     use kube::api::ObjectMeta;
     use mockall::predicate::*;
     use simpaas_core::{
-        kube::MockKubeClient, Service, ServiceInstance, ServiceInstanceSpec, ServiceSpec,
+        kube::MockKubeClient, Chart, Service, ServiceInstance, ServiceInstanceSpec, ServiceSpec,
     };
 
     use crate::{
@@ -304,11 +304,13 @@ mod test {
                                 ..Default::default()
                             },
                             spec: ServiceSpec {
-                                chart: "chart".into(),
+                                chart: Chart {
+                                    name: "chart".into(),
+                                    values: "values".into(),
+                                    version: None,
+                                },
                                 consumes: Default::default(),
                                 monitor_delay: 30,
-                                values: "values".into(),
-                                version: None,
                             },
                         },
                         stats: AppStats {

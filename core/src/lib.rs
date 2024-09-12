@@ -1,4 +1,4 @@
-use std::fmt::Debug;
+use std::{collections::BTreeSet, fmt::Debug};
 
 use ::kube::CustomResource;
 use enum_display::EnumDisplay;
@@ -13,6 +13,55 @@ pub mod process;
 pub mod tracer;
 
 // Specs
+
+#[derive(Clone, CustomResource, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[kube(
+    group = "simpaas.gleroy.dev",
+    version = "v1",
+    kind = "Application",
+    doc = "An application",
+    plural = "applications",
+    namespaced,
+    shortname = "app",
+    status = "DeployableStatus"
+)]
+#[serde(rename_all = "camelCase")]
+pub struct ApplicationSpec {
+    #[serde(default)]
+    pub containers: Vec<Container>,
+    #[serde(default = "default_monitor_delay")]
+    pub monitor_delay: u32,
+    #[serde(default)]
+    pub tls_domains: BTreeSet<String>,
+}
+
+impl Default for ApplicationSpec {
+    fn default() -> Self {
+        Self {
+            containers: vec![],
+            monitor_delay: default_monitor_delay(),
+            tls_domains: Default::default(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Chart {
+    pub name: String,
+    pub values: String,
+    pub version: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Container {
+    #[serde(default)]
+    pub exposes: Vec<Exposition>,
+    pub image: String,
+    pub name: String,
+    pub tag: String,
+}
 
 #[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -48,6 +97,21 @@ pub struct DatabaseSpec {
 
 #[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct Exposition {
+    pub ingress: Option<Ingress>,
+    pub port: u16,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Ingress {
+    pub domain: String,
+    #[serde(default = "default_ingress_path")]
+    pub path: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SecretRef {
     pub key: String,
     pub name: String,
@@ -65,13 +129,11 @@ pub struct SecretRef {
 )]
 #[serde(rename_all = "camelCase")]
 pub struct ServiceSpec {
-    pub chart: String,
+    pub chart: Chart,
     #[serde(default)]
     pub consumes: ServiceConsumable,
     #[serde(default = "default_monitor_delay")]
     pub monitor_delay: u32,
-    pub values: String,
-    pub version: Option<String>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
@@ -128,6 +190,10 @@ fn default_database_password_secret() -> SecretRef {
         key: "password".into(),
         name: "db-creds-{{ name }}".into(),
     }
+}
+
+fn default_ingress_path() -> String {
+    "/".into()
 }
 
 fn default_monitor_delay() -> u32 {

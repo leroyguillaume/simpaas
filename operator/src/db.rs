@@ -222,7 +222,7 @@ struct Variables {
 mod test {
     use mockall::predicate::*;
     use simpaas_core::{
-        kube::MockKubeClient, DatabaseConsumable, DatabaseSpec, ServiceConsumable,
+        kube::MockKubeClient, Chart, DatabaseConsumable, DatabaseSpec, ServiceConsumable,
         ServiceInstanceSpec, ServiceSpec,
     };
 
@@ -451,13 +451,15 @@ mod test {
                                 ..Default::default()
                             },
                             spec: ServiceSpec {
-                                chart: "chart".into(),
+                                chart: Chart {
+                                    name: "chart".into(),
+                                    values: "values".into(),
+                                    version: None,
+                                },
                                 consumes: ServiceConsumable {
                                     database: Some(consumable),
                                 },
                                 monitor_delay: 30,
-                                values: "values".into(),
-                                version: None,
                             },
                         },
                     }
@@ -712,13 +714,15 @@ mod test {
                                 ..Default::default()
                             },
                             spec: ServiceSpec {
-                                chart: "chart".into(),
+                                chart: Chart {
+                                    name: "chart".into(),
+                                    values: "values".into(),
+                                    version: None,
+                                },
                                 consumes: ServiceConsumable {
                                     database: Some(consumable),
                                 },
                                 monitor_delay: 30,
-                                values: "values".into(),
-                                version: None,
                             },
                         },
                     }

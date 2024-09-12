@@ -22,7 +22,18 @@ spec:
           spec:
             properties:
               chart:
-                type: string
+                properties:
+                  name:
+                    type: string
+                  values:
+                    type: string
+                  version:
+                    nullable: true
+                    type: string
+                required:
+                - name
+                - values
+                type: object
               consumes:
                 default:
                   database: null
@@ -65,14 +76,8 @@ spec:
                 format: uint32
                 minimum: 0.0
                 type: integer
-              values:
-                type: string
-              version:
-                nullable: true
-                type: string
             required:
             - chart
-            - values
             type: object
         required:
         - spec

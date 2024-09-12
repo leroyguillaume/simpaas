@@ -1,13 +1,15 @@
 use std::{
     fmt::{Debug, Display},
+    fs::read_to_string,
     future::Future,
+    path::PathBuf,
     sync::Arc,
 };
 
 use clap::Parser;
 use ctrl::controller;
 use db::DefaultDatabaseManager;
-use deployer::svcinst::ServiceInstanceDeployer;
+use deployer::{app::ApplicationDeployer, svcinst::ServiceInstanceDeployer};
 use err::Result;
 use hasher::Hasher;
 use helm::DefaultHelmRunner;
@@ -24,7 +26,7 @@ use simpaas_core::{
     kube::{DefaultKubeClient, KubeClient},
     process::wait_for_sigint_or_sigterm,
     tracer::init_tracer,
-    Database, DatabaseStatus, DeployableStatus, Service, ServiceInstance,
+    Application, Chart, Database, DatabaseStatus, DeployableStatus, Service, ServiceInstance,
 };
 use tokio::{sync::broadcast::channel, task::JoinSet};
 use tracing::{debug, info, warn};
@@ -36,16 +38,30 @@ async fn main() -> anyhow::Result<()> {
     let (stop_tx, stop_rx) = channel(1);
     let mut jobs = JoinSet::new();
     let args = Args::parse();
-    let requeue_delay = std::time::Duration::from_secs(args.requeue_delay);
     init_tracer(args.log_filter)?;
+    let values = if let Some(path) = args.chart_values {
+        debug!("loading chart values");
+        read_to_string(path)?
+    } else {
+        debug!("using default chart values");
+        include_str!("../resources/values.yaml.liquid").into()
+    };
+    let chart = Chart {
+        name: args.chart,
+        values,
+        version: args.chart_version,
+    };
+    let requeue_delay = std::time::Duration::from_secs(args.requeue_delay);
     let kube = Client::try_default().await?;
     let svc_inst_api: Api<ServiceInstance> = Api::all(kube.clone());
     let db_api: Api<Database> = Api::all(kube.clone());
+    let app_api: Api<Application> = Api::all(kube.clone());
     let kube = Arc::new(DefaultKubeClient::new(args.pod_name, kube));
     let helm = Arc::new(DefaultHelmRunner::new(args.helm_bin));
     let renderer = Arc::new(LiquidRenderer::new());
     let monitor = Arc::new(DefaultMonitor::new(kube.clone()));
-    let svc_inst_deployer = ServiceInstanceDeployer::new(helm, kube.clone(), renderer.clone());
+    let svc_inst_deployer =
+        ServiceInstanceDeployer::new(helm.clone(), kube.clone(), renderer.clone());
     let svc_inst_reconciler =
         DeployableReconciler::new(svc_inst_deployer, kube.clone(), monitor.clone());
     let svc_inst_ctrl = controller(
@@ -57,11 +73,22 @@ async fn main() -> anyhow::Result<()> {
     );
     jobs.spawn(svc_inst_ctrl);
     debug!("service instance controller started");
-    let db_mgr = DefaultDatabaseManager::new(args.cluster_domain, kube.clone(), renderer);
-    let db_reconciler = DatabaseReconciler::new(db_mgr, monitor);
-    let db_ctrl = controller(requeue_delay, db_api, kube, db_reconciler, stop_rx);
+    let db_mgr = DefaultDatabaseManager::new(args.cluster_domain, kube.clone(), renderer.clone());
+    let db_reconciler = DatabaseReconciler::new(db_mgr, monitor.clone());
+    let db_ctrl = controller(
+        requeue_delay,
+        db_api,
+        kube.clone(),
+        db_reconciler,
+        stop_tx.subscribe(),
+    );
     jobs.spawn(db_ctrl);
     debug!("database controller started");
+    let app_deployer = ApplicationDeployer::new(chart, helm, renderer);
+    let app_reconciler = DeployableReconciler::new(app_deployer, kube.clone(), monitor);
+    let app_ctrl = controller(requeue_delay, app_api, kube, app_reconciler, stop_rx);
+    jobs.spawn(app_ctrl);
+    debug!("application controller started");
     info!("operator started");
     wait_for_sigint_or_sigterm().await?;
     stop_tx.send(()).ok();
@@ -101,6 +128,7 @@ const ACTION_UNDEPLOYING: &str = "Undeploying";
 const JOB_KIND_CREATION: &str = "creation";
 const JOB_KIND_DELETION: &str = "deletion";
 
+const LABEL_APPLICATION: &str = "simpaas.gleroy.dev/application";
 const LABEL_DATABASE: &str = "simpaas.gleroy.dev/database";
 const LABEL_JOB_KIND: &str = "simpaas.gleroy.dev/job-kind";
 const LABEL_SERVICE_INSTANCE: &str = "simpaas.gleroy.dev/service-instance";
@@ -115,6 +143,17 @@ const REASON_FAILED: &str = "Failed";
 #[derive(Clone, Debug, Eq, Parser, PartialEq)]
 #[command(version)]
 struct Args {
+    #[arg(
+        long,
+        env,
+        default_value = "charts/simpaas-application",
+        long_help = "Chart used to deploy application"
+    )]
+    chart: String,
+    #[arg(long, env, long_help = "Path to template of chart values file")]
+    chart_values: Option<PathBuf>,
+    #[arg(long, env, long_help = "Version of the chart")]
+    chart_version: Option<String>,
     #[arg(
         long,
         env,
@@ -192,6 +231,29 @@ enum DeployableEvent {
 }
 
 impl ReconcilableResourceEvent for DeployableEvent {}
+
+// Application
+
+impl DeployableResource for Application {
+    fn hash<HASHER: Hasher>(&self, hasher: &HASHER) -> String {
+        let bytes = serde_json::to_vec(&self.spec).unwrap();
+        hasher.hash(&bytes)
+    }
+
+    async fn monitor_delay<KUBE: KubeClient>(&self, _kube: &KUBE) -> Result<chrono::Duration> {
+        Ok(chrono::Duration::seconds(self.spec.monitor_delay.into()))
+    }
+
+    fn selector<'a>(&'a self, name: &'a str) -> Vec<(&'a str, &'a str)> {
+        vec![(LABEL_APPLICATION, name)]
+    }
+}
+
+impl ReconcilableResource<DeployableStatus> for Application {
+    fn status(&self) -> Option<DeployableStatus> {
+        self.status
+    }
+}
 
 // Database
 

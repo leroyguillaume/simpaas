@@ -1,0 +1,131 @@
+{{- range $component := .Values.components }}
+{{- $podAnnotations := merge $.Values.podAnnotations (default dict $component.podAnnotations) }}
+{{- $podLabels := merge $.Values.podLabels (default  dict $component.podLabels) }}
+{{- $imagePullSecrets := concat $.Values.image.pullSecrets (default list $component.image.pullSecrets) }}
+{{- $podSecurityContext := merge $.Values.podSecurityContext (default dict $component.podSecurityContext) }}
+{{- $priorityClassName := default $.Values.priorityClassName $component.priorityClassName }}
+{{- $schedulerName := default $.Values.schedulerName $component.schedulerName }}
+{{- $topologySpreadConstraints := concat $.Values.topologySpreadConstraints (default list $component.topologySpreadConstraints) }}
+{{- $hostAliases := concat $.Values.hostAliases (default list $component.hostAliases) }}
+{{- $initContainers := concat $.Values.initContainers (default list $component.initContainers) }}
+{{- $securityContext := merge $.Values.securityContext (default dict $component.securityContext) }}
+{{- $env := concat $.Values.env (default list $component.env) }}
+{{- $volumeMounts := concat $.Values.volumeMounts (default list $component.volumeMounts) }}
+{{- $volumes := concat $.Values.volumes (default list $component.volumes) }}
+{{- $nodeSelector := merge $.Values.nodeSelector (default dict $component.nodeSelector) }}
+{{- $affinity := merge $.Values.affinity (default dict $component.affinity) }}
+{{- $tolerations := concat $.Values.tolerations (default list $component.tolerations) }}
+{{- $vars := dict "Chart" $.Chart "Release" $.Release "Values" $.Values "component" $component }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "simpaas-application.componentName" $vars }}
+  labels:
+    {{- include "simpaas-application.labels" $vars | nindent 4 }}
+spec:
+  replicas: {{ default 1 $component.replicas }}
+  selector:
+    matchLabels:
+      {{- include "simpaas-application.component.labels" $vars | nindent 6 }}
+      {{- with $podLabels }}
+      {{- toYaml . | nindent 6 }}
+      {{- end }}
+  template:
+    metadata:
+      {{- with $podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "simpaas-application.component.labels" $vars | nindent 8 }}
+        {{- with $podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- with $imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "simpaas-application.serviceAccountName" $vars }}
+      securityContext:
+        {{- toYaml $podSecurityContext| nindent 8 }}
+      {{- if $priorityClassName }}
+      priorityClassName: {{ $priorityClassName }}
+      {{- end }}
+      {{- with $topologySpreadConstraints }}
+      topologySpreadConstraints:
+        {{ toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if $component.terminationGracePeriodSeconds }}
+      terminationGracePeriodSeconds: {{ $component.terminationGracePeriodSeconds }}
+      {{- end }}
+      {{- with $hostAliases }}
+      hostAliases:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $initContainers }}
+      initContainers:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: {{ $component.name }}
+          securityContext:
+            {{- toYaml $securityContext | nindent 12 }}
+          image: {{ include "simpaas-application.image" (dict "global" $.Values.image "image" $component.image) }}
+          imagePullPolicy: {{ default $.Values.image.pullPolicy $component.image.pullPolicy }}
+          {{- with $component.command }}
+          command:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with $component.args }}
+          args:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with $component.lifecycle }}
+          lifecycle:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with $env }}
+          env:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with $component.ports }}
+          ports:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with $component.livenessProbe }}
+          livenessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with $component.readinessProbe }}
+          readinessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with $component.startupProbe }}
+          startupProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          resources:
+            {{- toYaml $component.resources | nindent 12 }}
+          {{- with $volumeMounts }}
+          volumeMounts:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      {{- with $volumes }}
+      volumes:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+---
+{{- end }}

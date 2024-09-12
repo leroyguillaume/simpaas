@@ -3,11 +3,12 @@ kind: Service
 metadata:
   name: postgresql
 spec:
-  chart: charts/simpaas-postgresql
-  values: |
-    labels:
-      simpaas.gleroy.dev/service: {{ service }}
-      simpaas.gleroy.dev/service-instance: {{ name }}
+  chart:
+    name: charts/simpaas-postgresql
+    values: |
+      labels:
+        simpaas.gleroy.dev/service: {{ service }}
+        simpaas.gleroy.dev/service-instance: {{ name }}
   consumes:
     database:
       host: '{{ instance }}-pgpool.{{ namespace }}.svc.{{ domain }}'

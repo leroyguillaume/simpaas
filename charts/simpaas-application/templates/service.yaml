@@ -1,0 +1,27 @@
+{{- range $service := .Values.services }}
+{{- $vars := dict "Chart" $.Chart "Release" $.Release "Values" $.Values "component" $service }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "simpaas-application.componentName" $vars }}
+  labels:
+    {{- include "simpaas-application.labels" $vars | nindent 4 }}
+    {{- with $.Values.serviceLabels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- with merge $.Values.serviceAnnotations (default dict $service.annotations) }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ default "ClusterIP" $service.type }}
+  {{- with $service.ports }}
+  ports:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- with $service.selector }}
+  selector:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+---
+{{- end }}
