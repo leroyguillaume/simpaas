@@ -6,7 +6,7 @@ use tracing::{debug, instrument};
 
 use crate::{
     db::DatabaseManager, monitor::Monitor, reconciler::FINALIZER, DatabaseEvent, JOB_KIND_CREATION,
-    JOB_KIND_DELETION, LABEL_DATABASE, LABEL_JOB_KIND, LABEL_SERVICE_INSTANCE,
+    JOB_KIND_DELETION, LABEL_DATABASE, LABEL_JOB_KIND,
 };
 
 use super::Reconciler;
@@ -110,14 +110,11 @@ impl<MANAGER: DatabaseManager, MONITOR: Monitor> Reconciler<DatabaseEvent, Datab
         if db.metadata.deletion_timestamp.is_some() {
             match db.status {
                 Some(DatabaseStatus::Dropping) => {
-                    let sel = selector(&[
-                        (LABEL_DATABASE, name),
-                        (LABEL_JOB_KIND, JOB_KIND_DELETION),
-                        (LABEL_SERVICE_INSTANCE, &db.spec.instance),
-                    ]);
+                    let sel =
+                        selector(&[(LABEL_DATABASE, name), (LABEL_JOB_KIND, JOB_KIND_DELETION)]);
                     let stats = self
                         .monitor
-                        .monitor_jobs(ns, &sel)
+                        .monitor_jobs(&db.spec.instance.namespace, &sel)
                         .await
                         .map_err(Error::monitoring_boxed)?;
                     if let Some(stats) = stats {
@@ -179,14 +176,11 @@ impl<MANAGER: DatabaseManager, MONITOR: Monitor> Reconciler<DatabaseEvent, Datab
                     ..Default::default()
                 }),
                 _ => {
-                    let sel = selector(&[
-                        (LABEL_DATABASE, name),
-                        (LABEL_JOB_KIND, JOB_KIND_CREATION),
-                        (LABEL_SERVICE_INSTANCE, &db.spec.instance),
-                    ]);
+                    let sel =
+                        selector(&[(LABEL_DATABASE, name), (LABEL_JOB_KIND, JOB_KIND_CREATION)]);
                     let stats = self
                         .monitor
-                        .monitor_jobs(ns, &sel)
+                        .monitor_jobs(&db.spec.instance.namespace, &sel)
                         .await
                         .map_err(Error::monitoring_boxed)?;
                     if let Some(stats) = stats {
@@ -227,7 +221,7 @@ mod test {
     use k8s_openapi::apimachinery::pkg::apis::meta::v1::Time;
     use kube::api::ObjectMeta;
     use mockall::predicate::*;
-    use simpaas_core::DatabaseSpec;
+    use simpaas_core::{DatabaseSpec, Selector};
 
     use crate::{
         db::MockDatabaseManager,
@@ -270,7 +264,10 @@ mod test {
                             },
                             spec: DatabaseSpec {
                                 database: "database".into(),
-                                instance: "instance".into(),
+                                instance: Selector {
+                                    name: "instance".into(),
+                                    namespace: "instance_namespace".into(),
+                                },
                                 user: "user".into(),
                             },
                             status: None,
@@ -338,11 +335,10 @@ mod test {
                 let sel = selector(&[
                     (LABEL_DATABASE, data.name),
                     (LABEL_JOB_KIND, JOB_KIND_DELETION),
-                    (LABEL_SERVICE_INSTANCE, &data.database.spec.instance),
                 ]);
                 monitor
                     .expect_monitor_jobs()
-                    .with(eq(data.namespace), eq(sel))
+                    .with(eq(data.database.spec.instance.namespace.clone()), eq(sel))
                     .times(mocks.monitor_drop_job.is_some() as usize)
                     .returning({
                         let monitor = mocks.monitor_drop_job.clone();
@@ -351,11 +347,10 @@ mod test {
                 let sel = selector(&[
                     (LABEL_DATABASE, data.name),
                     (LABEL_JOB_KIND, JOB_KIND_CREATION),
-                    (LABEL_SERVICE_INSTANCE, &data.database.spec.instance),
                 ]);
                 monitor
                     .expect_monitor_jobs()
-                    .with(eq(data.namespace), eq(sel))
+                    .with(eq(data.database.spec.instance.namespace.clone()), eq(sel))
                     .times(mocks.monitor_creation_job.is_some() as usize)
                     .returning({
                         let monitor = mocks.monitor_creation_job.clone();

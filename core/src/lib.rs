@@ -87,11 +87,11 @@ pub struct DatabaseConsumable {
 )]
 #[serde(rename_all = "camelCase")]
 pub struct DatabaseSpec {
-    #[schemars(schema_with = "property_immutable")]
+    #[schemars(schema_with = "property_immutable_string")]
     pub database: String,
-    #[schemars(schema_with = "property_immutable")]
-    pub instance: String,
-    #[schemars(schema_with = "property_immutable")]
+    #[schemars(schema_with = "property_immutable_selector")]
+    pub instance: Selector,
+    #[schemars(schema_with = "property_immutable_string")]
     pub user: String,
 }
 
@@ -115,6 +115,13 @@ pub struct Ingress {
 pub struct SecretRef {
     pub key: String,
     pub name: String,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Selector {
+    pub name: String,
+    pub namespace: String,
 }
 
 #[derive(Clone, CustomResource, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
@@ -157,7 +164,7 @@ pub struct ServiceConsumable {
 pub struct ServiceInstanceSpec {
     #[serde(default)]
     pub values: Map<String, Value>,
-    #[schemars(schema_with = "property_immutable")]
+    #[schemars(schema_with = "property_immutable_string")]
     pub service: String,
 }
 
@@ -202,14 +209,28 @@ fn default_monitor_delay() -> u32 {
 
 // Properties
 
-fn property_immutable(_: &mut SchemaGenerator) -> Schema {
-    serde_json::from_value(json!({
-        "type": "string",
-        "x-kubernetes-validations": [
+fn property_immutable_selector(gen: &mut SchemaGenerator) -> Schema {
+    property_immutable::<Selector>(gen)
+}
+
+fn property_immutable_string(gen: &mut SchemaGenerator) -> Schema {
+    property_immutable::<String>(gen)
+}
+
+fn property_immutable<TYPE: JsonSchema>(gen: &mut SchemaGenerator) -> Schema {
+    let schema = serde_json::to_value(gen.subschema_for::<TYPE>()).unwrap();
+    println!("{schema:#?}");
+    let mut schema = match schema {
+        Value::Object(schema) => schema,
+        _ => unreachable!(),
+    };
+    schema.insert(
+        "x-kubernetes-validations".into(),
+        json!([
             {
                 "rule": "self == oldSelf",
             },
-        ],
-    }))
-    .unwrap()
+        ]),
+    );
+    serde_json::from_value(Value::Object(schema)).unwrap()
 }

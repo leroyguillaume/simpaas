@@ -1,8 +1,11 @@
 apiVersion: simpaas.gleroy.dev/v1
 kind: Database
 metadata:
-  name: my-pg
+  name: test
+  namespace: nginx
 spec:
-  instance: my-pg
-  database: my_pg
-  user: my_pg
+  instance:
+    name: postgresql
+    namespace: postgresql
+  database: test
+  user: test

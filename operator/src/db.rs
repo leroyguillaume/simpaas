@@ -5,7 +5,7 @@ use kube::{api::ObjectMeta, Resource};
 use serde::{Deserialize, Serialize};
 use simpaas_core::{
     kube::{selector, KubeClient},
-    Database, SecretRef, Service, ServiceInstance,
+    Database, SecretRef, Selector, Service, ServiceInstance,
 };
 use tracing::{debug, info, instrument, warn};
 
@@ -13,7 +13,7 @@ use crate::{
     err::{Error, Result},
     pwd::{DefaultPasswordGenerator, PasswordGenerator},
     renderer::Renderer,
-    LABEL_DATABASE, LABEL_SERVICE, LABEL_SERVICE_INSTANCE,
+    LABEL_DATABASE,
 };
 
 // Traits
@@ -63,24 +63,11 @@ impl<KUBE: KubeClient, RENDERER: Renderer>
     }
 }
 
-impl<KUBE: KubeClient, PASSWORDGENERATOR: PasswordGenerator, RENDERER: Renderer> DatabaseManager
-    for DefaultDatabaseManager<KUBE, PASSWORDGENERATOR, RENDERER>
+impl<KUBE: KubeClient, PASSWORDGENERATOR: PasswordGenerator, RENDERER: Renderer>
+    DefaultDatabaseManager<KUBE, PASSWORDGENERATOR, RENDERER>
 {
-    #[instrument(skip(self, ns, name, db), fields(resource.api_version = %Database::api_version(&()), resource.kind = %Database::kind(&()), resource.name = name, resource.namespace = ns))]
-    async fn clean(&self, ns: &str, name: &str, db: &Database) -> Result {
-        let sel = selector(&[
-            (LABEL_DATABASE, name),
-            (LABEL_SERVICE_INSTANCE, &db.spec.instance),
-        ]);
-        let jobs = self.kube.list_from::<Job>(ns, &sel).await?;
-        for job in jobs {
-            if let Some(name) = job.metadata.name {
-                self.kube.delete_from::<Job>(ns, &name).await?;
-            } else {
-                warn!("job is unnamed");
-            }
-        }
-        let secs = self.kube.list_from::<Secret>(ns, &sel).await?;
+    async fn delete_secrets(&self, ns: &str, sel: &str) -> Result {
+        let secs = self.kube.list_from::<Secret>(ns, sel).await?;
         for sec in secs {
             if let Some(name) = sec.metadata.name {
                 self.kube.delete_from::<Secret>(ns, &name).await?;
@@ -90,12 +77,38 @@ impl<KUBE: KubeClient, PASSWORDGENERATOR: PasswordGenerator, RENDERER: Renderer>
         }
         Ok(())
     }
+}
+
+impl<KUBE: KubeClient, PASSWORDGENERATOR: PasswordGenerator, RENDERER: Renderer> DatabaseManager
+    for DefaultDatabaseManager<KUBE, PASSWORDGENERATOR, RENDERER>
+{
+    #[instrument(skip(self, ns, name, db), fields(resource.api_version = %Database::api_version(&()), resource.kind = %Database::kind(&()), resource.name = name, resource.namespace = ns))]
+    async fn clean(&self, ns: &str, name: &str, db: &Database) -> Result {
+        let sel = selector(&[(LABEL_DATABASE, name)]);
+        let jobs = self
+            .kube
+            .list_from::<Job>(&db.spec.instance.namespace, &sel)
+            .await?;
+        for job in jobs {
+            if let Some(name) = job.metadata.name {
+                self.kube
+                    .delete_from::<Job>(&db.spec.instance.namespace, &name)
+                    .await?;
+            } else {
+                warn!("job is unnamed");
+            }
+        }
+        self.delete_secrets(&db.spec.instance.namespace, &sel)
+            .await?;
+        self.delete_secrets(ns, &sel).await?;
+        Ok(())
+    }
 
     #[instrument(skip(self, ns, name, db), fields(resource.api_version = %Database::api_version(&()), resource.kind = %Database::kind(&()), resource.name = name, resource.namespace = ns))]
     async fn start_creation_job(&self, ns: &str, name: &str, db: &Database) -> Result {
         let svc_inst = self
             .kube
-            .get_from::<ServiceInstance>(ns, &db.spec.instance)
+            .get_from::<ServiceInstance>(&db.spec.instance.namespace, &db.spec.instance.name)
             .await?
             .ok_or(Error::ServiceInstanceNotFound)?;
         let svc = self
@@ -123,13 +136,9 @@ impl<KUBE: KubeClient, PASSWORDGENERATOR: PasswordGenerator, RENDERER: Renderer>
         self.renderer
             .render(&cons.password_secret.name, &vars, &mut sec_name)?;
         let sec_name = String::from_utf8(sec_name)?;
-        let sec = Secret {
+        let mut sec = Secret {
             metadata: ObjectMeta {
-                labels: Some(BTreeMap::from_iter([
-                    (LABEL_DATABASE.into(), name.into()),
-                    (LABEL_SERVICE.into(), svc_inst.spec.service),
-                    (LABEL_SERVICE_INSTANCE.into(), db.spec.instance.clone()),
-                ])),
+                labels: Some(BTreeMap::from_iter([(LABEL_DATABASE.into(), name.into())])),
                 name: Some(sec_name.clone()),
                 namespace: Some(ns.into()),
                 ..Default::default()
@@ -141,6 +150,10 @@ impl<KUBE: KubeClient, PASSWORDGENERATOR: PasswordGenerator, RENDERER: Renderer>
             ..Default::default()
         };
         self.kube.patch_from(ns, &sec_name, &sec).await?;
+        sec.metadata.namespace = Some(db.spec.instance.namespace.clone());
+        self.kube
+            .patch_from(&db.spec.instance.namespace, &sec_name, &sec)
+            .await?;
         debug!("creating creation job");
         vars.password_secret = Some(SecretRef {
             key: cons.password_secret.key,
@@ -150,7 +163,9 @@ impl<KUBE: KubeClient, PASSWORDGENERATOR: PasswordGenerator, RENDERER: Renderer>
         self.renderer.render(&cons.creation_job, &vars, &mut yaml)?;
         let job: Job = serde_yaml::from_slice(&yaml)?;
         let job_name = job.metadata.name.as_ref().ok_or(Error::UnnamedJob)?;
-        self.kube.patch_from(ns, job_name, &job).await?;
+        self.kube
+            .patch_from(&db.spec.instance.namespace, job_name, &job)
+            .await?;
         info!("creation job started");
         Ok(())
     }
@@ -159,7 +174,7 @@ impl<KUBE: KubeClient, PASSWORDGENERATOR: PasswordGenerator, RENDERER: Renderer>
     async fn start_drop_job(&self, ns: &str, name: &str, db: &Database) -> Result {
         let svc_inst = self
             .kube
-            .get_from::<ServiceInstance>(ns, &db.spec.instance)
+            .get_from::<ServiceInstance>(&db.spec.instance.namespace, &db.spec.instance.name)
             .await?
             .ok_or(Error::ServiceInstanceNotFound)?;
         let svc = self
@@ -195,7 +210,9 @@ impl<KUBE: KubeClient, PASSWORDGENERATOR: PasswordGenerator, RENDERER: Renderer>
         self.renderer.render(&cons.drop_job, &vars, &mut yaml)?;
         let job: Job = serde_yaml::from_slice(&yaml)?;
         let job_name = job.metadata.name.as_ref().ok_or(Error::UnnamedJob)?;
-        self.kube.patch_from(ns, job_name, &job).await?;
+        self.kube
+            .patch_from(&db.spec.instance.namespace, job_name, &job)
+            .await?;
         info!("drop job started");
         Ok(())
     }
@@ -208,7 +225,7 @@ impl<KUBE: KubeClient, PASSWORDGENERATOR: PasswordGenerator, RENDERER: Renderer>
 struct Variables {
     database: String,
     domain: String,
-    instance: String,
+    instance: Selector,
     name: String,
     namespace: String,
     password_secret: Option<SecretRef>,
@@ -269,7 +286,10 @@ mod test {
                             },
                             spec: DatabaseSpec {
                                 database: "database".into(),
-                                instance: "instance".into(),
+                                instance: Selector {
+                                    name: "instance".into(),
+                                    namespace: "instance_namespace".into(),
+                                },
                                 user: "user".into(),
                             },
                             status: None,
@@ -312,27 +332,44 @@ mod test {
                 init_tracer();
                 let data = Data::default();
                 let mut kube = MockKubeClient::new();
-                let sel = selector(&[
-                    (LABEL_DATABASE, data.name),
-                    (LABEL_SERVICE_INSTANCE, &data.database.spec.instance),
-                ]);
+                let sel = selector(&[(LABEL_DATABASE, data.name)]);
                 kube.expect_delete_from::<Job>()
-                    .with(eq(data.namespace), eq(data.job_name))
+                    .with(
+                        eq(data.database.spec.instance.namespace.clone()),
+                        eq(data.job_name),
+                    )
                     .times(1)
                     .returning(|_, _| async_ok(()));
                 kube.expect_delete_from::<Secret>()
                     .with(eq(data.namespace), eq(data.secret_name))
                     .times(1)
                     .returning(|_, _| async_ok(()));
+                kube.expect_delete_from::<Secret>()
+                    .with(
+                        eq(data.database.spec.instance.namespace.clone()),
+                        eq(data.secret_name),
+                    )
+                    .times(1)
+                    .returning(|_, _| async_ok(()));
                 kube.expect_list_from()
-                    .with(eq(data.namespace), eq(sel.clone()))
+                    .with(
+                        eq(data.database.spec.instance.namespace.clone()),
+                        eq(sel.clone()),
+                    )
                     .times(1)
                     .returning({
                         let jobs = data.jobs.clone();
                         move |_, _| async_ok(jobs.clone())
                     });
                 kube.expect_list_from()
-                    .with(eq(data.namespace), eq(sel))
+                    .with(eq(data.namespace), eq(sel.clone()))
+                    .times(1)
+                    .returning({
+                        let secs = data.secrets.clone();
+                        move |_, _| async_ok(secs.clone())
+                    });
+                kube.expect_list_from()
+                    .with(eq(data.database.spec.instance.namespace.clone()), eq(sel))
                     .times(1)
                     .returning({
                         let secs = data.secrets.clone();
@@ -401,7 +438,10 @@ mod test {
                             },
                             spec: DatabaseSpec {
                                 database: "database".into(),
-                                instance: svc_inst_name.into(),
+                                instance: Selector {
+                                    name: svc_inst_name.into(),
+                                    namespace: "instance_namespace".into(),
+                                },
                                 user: "user".into(),
                             },
                             status: None,
@@ -432,11 +472,10 @@ mod test {
                         password: pwd,
                         secret: Secret {
                             metadata: ObjectMeta {
-                                labels: Some(BTreeMap::from_iter([
-                                    (LABEL_DATABASE.into(), name.into()),
-                                    (LABEL_SERVICE.into(), svc_name.into()),
-                                    (LABEL_SERVICE_INSTANCE.into(), svc_inst_name.into()),
-                                ])),
+                                labels: Some(BTreeMap::from_iter([(
+                                    LABEL_DATABASE.into(),
+                                    name.into(),
+                                )])),
                                 name: Some(sec_name.into()),
                                 namespace: Some(ns.into()),
                                 ..Default::default()
@@ -485,7 +524,10 @@ mod test {
                 init_tracer();
                 let mut kube = MockKubeClient::new();
                 kube.expect_get_from::<ServiceInstance>()
-                    .with(eq(data.namespace), eq(data.database.spec.instance.clone()))
+                    .with(
+                        eq(data.database.spec.instance.namespace.clone()),
+                        eq(data.database.spec.instance.name.clone()),
+                    )
                     .times(1)
                     .returning({
                         let inst = mocks.instance.clone();
@@ -506,8 +548,22 @@ mod test {
                     )
                     .times(mocks.patch_secret as usize)
                     .returning(|_, _, _| async_ok(()));
+                let mut secret = data.secret.clone();
+                secret.metadata.namespace = Some(data.database.spec.instance.namespace.clone());
                 kube.expect_patch_from()
-                    .with(eq(data.namespace), eq(data.job_name), eq_job(&data.job))
+                    .with(
+                        eq(data.database.spec.instance.namespace.clone()),
+                        eq(data.secret_name),
+                        eq_secret(&secret),
+                    )
+                    .times(mocks.patch_secret as usize)
+                    .returning(|_, _, _| async_ok(()));
+                kube.expect_patch_from()
+                    .with(
+                        eq(data.database.spec.instance.namespace.clone()),
+                        eq(data.job_name),
+                        eq_job(&data.job),
+                    )
                     .times(mocks.patch_job as usize)
                     .returning(|_, _, _| async_ok(()));
                 let mut pwd_gen = MockPasswordGenerator::new();
@@ -679,7 +735,10 @@ mod test {
                             },
                             spec: DatabaseSpec {
                                 database: "database".into(),
-                                instance: svc_inst_name.into(),
+                                instance: Selector {
+                                    name: svc_inst_name.into(),
+                                    namespace: "instance_namespace".into(),
+                                },
                                 user: "user".into(),
                             },
                             status: None,
@@ -746,7 +805,10 @@ mod test {
                 init_tracer();
                 let mut kube = MockKubeClient::new();
                 kube.expect_get_from::<ServiceInstance>()
-                    .with(eq(data.namespace), eq(data.database.spec.instance.clone()))
+                    .with(
+                        eq(data.database.spec.instance.namespace.clone()),
+                        eq(data.database.spec.instance.name.clone()),
+                    )
                     .times(1)
                     .returning({
                         let inst = mocks.instance.clone();
@@ -760,7 +822,11 @@ mod test {
                         move |_| call_mock_fn_opt_async(&get_svc)
                     });
                 kube.expect_patch_from()
-                    .with(eq(data.namespace), eq(data.job_name), eq_job(&data.job))
+                    .with(
+                        eq(data.database.spec.instance.namespace.clone()),
+                        eq(data.job_name),
+                        eq_job(&data.job),
+                    )
                     .times(mocks.patch_job as usize)
                     .returning(|_, _, _| async_ok(()));
                 let mut renderer = MockRenderer::new();

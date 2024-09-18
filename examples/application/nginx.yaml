@@ -1,7 +1,8 @@
 apiVersion: simpaas.gleroy.dev/v1
 kind: Application
 metadata:
-  name: my-nginx
+  name: nginx
+  namespace: nginx
 spec:
   containers:
   - name: nginx
@@ -10,6 +11,6 @@ spec:
     exposes:
     - port: 80
       ingress:
-        domain: my-nginx.k8s.orb.local
+        domain: &nginxDomain nginx.k8s.orb.local
   tlsDomains:
-  - my-nginx.k8s.orb.local
+  - *nginxDomain

@@ -26,7 +26,15 @@ spec:
                 x-kubernetes-validations:
                 - rule: self == oldSelf
               instance:
-                type: string
+                properties:
+                  name:
+                    type: string
+                  namespace:
+                    type: string
+                required:
+                - name
+                - namespace
+                type: object
                 x-kubernetes-validations:
                 - rule: self == oldSelf
               user:

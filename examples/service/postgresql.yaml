@@ -2,6 +2,7 @@ apiVersion: simpaas.gleroy.dev/v1
 kind: Service
 metadata:
   name: postgresql
+  namespace: simpaas
 spec:
   chart:
     name: charts/simpaas-postgresql
@@ -11,26 +12,23 @@ spec:
         simpaas.gleroy.dev/service-instance: {{ name }}
   consumes:
     database:
-      host: '{{ instance }}-pgpool.{{ namespace }}.svc.{{ domain }}'
+      host: '{{ instance.name }}-pgpool.{{ instance.namespace }}.svc.{{ domain }}'
       port: 5432
       creationJob: |
         apiVersion: batch/v1
         kind: Job
         metadata:
           name: database-creation-{{ name }}
-          namespace: {{ namespace }}
+          namespace: {{ instance.namespace }}
           labels:
             simpaas.gleroy.dev/database: {{ name }}
             simpaas.gleroy.dev/job-kind: creation
-            simpaas.gleroy.dev/service: {{ service }}
-            simpaas.gleroy.dev/service-instance: {{ instance }}
         spec:
           template:
             metadata:
               labels:
                 simpaas.gleroy.dev/database: {{ name }}
-                simpaas.gleroy.dev/service: {{ service }}
-                simpaas.gleroy.dev/service-instance: {{ instance }}
+                simpaas.gleroy.dev/job-kind: creation
             spec:
               restartPolicy: OnFailure
               containers:
@@ -56,19 +54,6 @@ spec:
                     echo "database $NAME created"
                   fi
                 env:
-                - name: HOST
-                  value: {{ instance }}-pgpool.{{ namespace }}.svc.{{ domain }}
-                - name: PORT
-                  value: "5432"
-                - name: NAME
-                  value: {{ database }}
-                - name: PG_USER
-                  value: postgres
-                - name: PGPASSWORD
-                  valueFrom:
-                    secretKeyRef:
-                      name: {{ instance }}-creds
-                      key: postgres-password
                 - name: DB_USER
                   value: {{ user }}
                 - name: DB_USER_PASSWORD
@@ -76,24 +61,34 @@ spec:
                     secretKeyRef:
                       name: {{ passwordSecret.name }}
                       key: {{ passwordSecret.key }}
+                - name: HOST
+                  value: {{ instance.name }}-pgpool.{{ instance.namespace }}.svc.{{ domain }}
+                - name: NAME
+                  value: {{ database }}
+                - name: PGPASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ instance.name }}-creds
+                      key: postgres-password
+                - name: PG_USER
+                  value: postgres
+                - name: PORT
+                  value: "5432"
       dropJob: |
         apiVersion: batch/v1
         kind: Job
         metadata:
           name: database-drop-{{ name }}
-          namespace: {{ namespace }}
+          namespace: {{ instance.namespace }}
           labels:
             simpaas.gleroy.dev/database: {{ name }}
             simpaas.gleroy.dev/job-kind: deletion
-            simpaas.gleroy.dev/service: {{ service }}
-            simpaas.gleroy.dev/service-instance: {{ instance }}
         spec:
           template:
             metadata:
               labels:
                 simpaas.gleroy.dev/database: {{ name }}
-                simpaas.gleroy.dev/service: {{ service }}
-                simpaas.gleroy.dev/service-instance: {{ instance }}
+                simpaas.gleroy.dev/job-kind: deletion
             spec:
               restartPolicy: OnFailure
               containers:
@@ -107,18 +102,18 @@ spec:
                   psql -h $HOST -p $PORT -U $PG_USER -c "DROP DATABASE IF EXISTS $NAME (FORCE)"
                   psql -h $HOST -p $PORT -U $PG_USER -c "DROP ROLE IF EXISTS $DB_USER"
                 env:
-                - name: HOST
-                  value: {{ instance }}-pgpool.{{ namespace }}.svc.{{ domain }}
-                - name: PORT
-                  value: "5432"
-                - name: NAME
-                  value: {{ database }}
-                - name: PG_USER
-                  value: postgres
+                - name: DB_USER
+                  value: {{ user }}
                 - name: PGPASSWORD
                   valueFrom:
                     secretKeyRef:
-                      name: {{ instance }}-creds
+                      name: {{ instance.name }}-creds
                       key: postgres-password
-                - name: DB_USER
-                  value: {{ user }}
+                - name: PG_USER
+                  value: postgres
+                - name: HOST
+                  value: {{ instance.name }}-pgpool.{{ instance.namespace }}.svc.{{ domain }}
+                - name: NAME
+                  value: {{ database }}
+                - name: PORT
+                  value: "5432"

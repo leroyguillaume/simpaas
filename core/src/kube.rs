@@ -197,7 +197,7 @@ impl KubeClient for DefaultKubeClient {
     ) -> Result<()> {
         debug!("deleting resource");
         let api: Api<RESOURCE> = Api::namespaced(self.kube.clone(), ns);
-        let params = DeleteParams::default();
+        let params = DeleteParams::foreground();
         api.delete(name, &params).await?;
         Ok(())
     }

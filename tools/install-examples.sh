@@ -8,13 +8,9 @@ create_namespace() {
   fi
 }
 
-nginx_ns=my-nginx
-pg_inst_name=my-pg
-simpaas_ns=simpaas
-
-create_namespace $pg_inst_name
-create_namespace $nginx_ns
-kubectl -n $simpaas_ns apply -f examples/service/postgresql.yaml
-kubectl -n $pg_inst_name apply -f examples/service-instance/postgresql.yaml
-kubectl -n $pg_inst_name apply -f examples/database/postgresql.yaml
-kubectl -n $nginx_ns apply -f examples/application/nginx.yaml
+create_namespace postgresql
+create_namespace nginx
+kubectl apply -f examples/service/postgresql.yaml
+kubectl apply -f examples/service-instance/postgresql.yaml
+kubectl apply -f examples/database/postgresql.yaml
+kubectl apply -f examples/application/nginx.yaml
