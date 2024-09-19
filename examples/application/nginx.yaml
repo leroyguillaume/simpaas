@@ -14,5 +14,7 @@ spec:
     - port: 80
       ingress:
         domain: &nginxDomain nginx.k8s.orb.local
+    env:
+      FOO: bar
   tlsDomains:
   - *nginxDomain

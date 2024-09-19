@@ -1,4 +1,9 @@
-use std::{borrow::Cow, collections::BTreeSet, fmt::Debug, string::FromUtf8Error};
+use std::{
+    borrow::Cow,
+    collections::{BTreeMap, BTreeSet},
+    fmt::Debug,
+    string::FromUtf8Error,
+};
 
 use ::kube::CustomResource;
 use enum_display::EnumDisplay;
@@ -77,6 +82,8 @@ pub struct Chart {
 pub struct Container {
     #[serde(default)]
     pub databases: Vec<DatabaseRef>,
+    #[serde(default)]
+    pub env: BTreeMap<String, String>,
     #[serde(default)]
     pub exposes: Vec<Exposition>,
     pub image: String,

@@ -93,19 +93,19 @@ impl<HELM: HelmRunner, KUBE: KubeClient, RENDERER: Renderer> Deployer<Applicatio
                 env.extend_from_slice(&[
                     EnvironmentVariable {
                         key: Cow::Borrowed(&db_ref.mapping.host),
-                        value: conn_info.host,
+                        value: conn_info.host.into(),
                     },
                     EnvironmentVariable {
                         key: Cow::Borrowed(&db_ref.mapping.name),
-                        value: conn_info.database.into_owned(),
+                        value: conn_info.database.into_owned().into(),
                     },
                     EnvironmentVariable {
                         key: Cow::Borrowed(&db_ref.mapping.port),
-                        value: conn_info.port.to_string(),
+                        value: conn_info.port.to_string().into(),
                     },
                     EnvironmentVariable {
                         key: Cow::Borrowed(&db_ref.mapping.user),
-                        value: conn_info.user.into_owned(),
+                        value: conn_info.user.into_owned().into(),
                     },
                 ]);
                 secs.push(SecretVariable {
@@ -139,6 +139,11 @@ impl<HELM: HelmRunner, KUBE: KubeClient, RENDERER: Renderer> Deployer<Applicatio
                     name: &cont.name,
                 });
             };
+            let cont_env = cont.env.iter().map(|(key, val)| EnvironmentVariable {
+                key: Cow::Borrowed(key),
+                value: Cow::Borrowed(val),
+            });
+            env.extend(cont_env);
             cmpts.push(ComponentVariable {
                 environment: env,
                 exposes: Cow::Borrowed(&cont.exposes),
@@ -196,7 +201,7 @@ struct ComponentVariable<'a> {
 #[serde(rename_all = "camelCase")]
 struct EnvironmentVariable<'a> {
     key: Cow<'a, str>,
-    value: String,
+    value: Cow<'a, str>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -314,6 +319,8 @@ mod test {
                     let cont_1_exposes = vec![];
                     let cont_1_image = "container_1_image";
                     let cont_1_tag = "container_1_tag";
+                    let cont_1_env_key = "container_1_environment_key";
+                    let cont_1_env_val = "container_1_environment_value";
                     let cont_2_name = "container_2_name";
                     let cont_2_port_1 = 2;
                     let cont_2_exposes = vec![Exposition {
@@ -379,6 +386,10 @@ mod test {
                                 containers: vec![
                                     Container {
                                         databases: vec![db_ref.clone()],
+                                        env: BTreeMap::from_iter([(
+                                            cont_1_env_key.into(),
+                                            cont_1_env_val.into(),
+                                        )]),
                                         exposes: cont_1_exposes.clone(),
                                         image: cont_1_image.into(),
                                         name: cont_1_name.into(),
@@ -386,6 +397,7 @@ mod test {
                                     },
                                     Container {
                                         databases: vec![],
+                                        env: BTreeMap::new(),
                                         exposes: cont_2_exposes.clone(),
                                         image: cont_2_image.into(),
                                         name: cont_2_name.into(),
@@ -393,6 +405,7 @@ mod test {
                                     },
                                     Container {
                                         databases: vec![],
+                                        env: BTreeMap::new(),
                                         exposes: cont_3_exposes.clone(),
                                         image: cont_3_image.into(),
                                         name: cont_3_name.into(),
@@ -400,6 +413,7 @@ mod test {
                                     },
                                     Container {
                                         databases: vec![],
+                                        env: BTreeMap::new(),
                                         exposes: cont_4_exposes.clone(),
                                         image: cont_4_image.into(),
                                         name: cont_4_name.into(),
@@ -428,11 +442,15 @@ mod test {
                                     },
                                     EnvironmentVariable {
                                         key: Cow::Owned(db_ref.mapping.port.clone()),
-                                        value: db_cons.port.to_string(),
+                                        value: db_cons.port.to_string().into(),
                                     },
                                     EnvironmentVariable {
                                         key: Cow::Owned(db_ref.mapping.user.clone()),
                                         value: db_user.into(),
+                                    },
+                                    EnvironmentVariable {
+                                        key: Cow::Borrowed(cont_1_env_key),
+                                        value: Cow::Borrowed(cont_1_env_val),
                                     },
                                 ],
                                 exposes: Cow::Owned(cont_1_exposes),

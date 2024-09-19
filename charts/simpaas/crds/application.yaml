@@ -59,6 +59,11 @@ spec:
                         - name
                         type: object
                       type: array
+                    env:
+                      additionalProperties:
+                        type: string
+                      default: {}
+                      type: object
                     exposes:
                       default: []
                       items:
