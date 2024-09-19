@@ -29,6 +29,7 @@ ingress:
 {%- if components.size > 0 %}
 components:
   {%- for component in components %}
+  {%- assign envSize = component.environment.size | plus: component.secrets.size %}
   - name: {{ component.name  }}
     image:
       repository: {{ component.image.repository }}
@@ -37,6 +38,20 @@ components:
     ports:
       {%- for exposition in component.service.exposes %}
       - containerPort: {{ exposition.port }}
+      {%- endfor %}
+    {%- endif %}
+    {%- if envSize > 0 %}
+    env:
+      {%- for env in component.environment %}
+      - name: {{ env.key }}
+        value: "{{ env.value }}"
+      {%- endfor %}
+      {%- for env in component.secrets %}
+      - name: {{ env.key }}
+        valueFrom:
+          secretKeyRef:
+            name: {{ env.secret.name }}
+            key: {{ env.secret.key }}
       {%- endfor %}
     {%- endif %}
   {%- endfor %}

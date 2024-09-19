@@ -73,7 +73,8 @@ async fn main() -> anyhow::Result<()> {
     );
     jobs.spawn(svc_inst_ctrl);
     debug!("service instance controller started");
-    let db_mgr = DefaultDatabaseManager::new(args.cluster_domain, kube.clone(), renderer.clone());
+    let db_mgr =
+        DefaultDatabaseManager::new(args.cluster_domain.clone(), kube.clone(), renderer.clone());
     let db_reconciler = DatabaseReconciler::new(db_mgr, monitor.clone());
     let db_ctrl = controller(
         requeue_delay,
@@ -84,7 +85,8 @@ async fn main() -> anyhow::Result<()> {
     );
     jobs.spawn(db_ctrl);
     debug!("database controller started");
-    let app_deployer = ApplicationDeployer::new(chart, helm, renderer);
+    let app_deployer =
+        ApplicationDeployer::new(args.cluster_domain, chart, helm, kube.clone(), renderer);
     let app_reconciler = DeployableReconciler::new(app_deployer, kube.clone(), monitor);
     let app_ctrl = controller(requeue_delay, app_api, kube, app_reconciler, stop_rx);
     jobs.spawn(app_ctrl);

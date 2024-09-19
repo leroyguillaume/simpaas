@@ -76,6 +76,8 @@ pub struct Chart {
 #[serde(rename_all = "camelCase")]
 pub struct Container {
     #[serde(default)]
+    pub databases: Vec<DatabaseRef>,
+    #[serde(default)]
     pub exposes: Vec<Exposition>,
     pub image: String,
     pub name: String,
@@ -120,6 +122,41 @@ impl DatabaseConsumable {
             user: Cow::Borrowed(vars.user),
         })
     }
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DatabaseMapping {
+    #[serde(default = "default_database_mapping_host")]
+    pub host: String,
+    #[serde(default = "default_database_mapping_name")]
+    pub name: String,
+    #[serde(default = "default_database_mapping_password")]
+    pub password: String,
+    #[serde(default = "default_database_mapping_port")]
+    pub port: String,
+    #[serde(default = "default_database_mapping_user")]
+    pub user: String,
+}
+
+impl Default for DatabaseMapping {
+    fn default() -> Self {
+        Self {
+            host: default_database_mapping_host(),
+            name: default_database_mapping_name(),
+            password: default_database_mapping_password(),
+            port: default_database_mapping_port(),
+            user: default_database_mapping_user(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DatabaseRef {
+    #[serde(default)]
+    pub mapping: DatabaseMapping,
+    pub name: String,
 }
 
 #[derive(Clone, CustomResource, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
@@ -267,6 +304,26 @@ pub struct DatabaseConnectionInfoVariables<'a> {
 }
 
 // Defaults
+
+fn default_database_mapping_host() -> String {
+    "DATABASE_HOST".into()
+}
+
+fn default_database_mapping_name() -> String {
+    "DATABASE_NAME".into()
+}
+
+fn default_database_mapping_password() -> String {
+    "DATABASE_PASSWORD".into()
+}
+
+fn default_database_mapping_port() -> String {
+    "DATABASE_PORT".into()
+}
+
+fn default_database_mapping_user() -> String {
+    "DATABASE_USER".into()
+}
 
 fn default_database_password_secret() -> SecretRef {
     SecretRef {

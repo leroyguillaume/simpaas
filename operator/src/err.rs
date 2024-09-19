@@ -10,8 +10,12 @@ pub type Result<VALUE = ()> = std::result::Result<VALUE, Error>;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
+    #[error("service doesn't consume database resources")]
+    DatabaseNotConsumed,
     #[error("command failed")]
     CommandFailed,
+    #[error("database doesn't exist")]
+    DatabaseNotFound,
     #[error("i/o error: {0}")]
     Io(
         #[from]
@@ -30,8 +34,6 @@ pub enum Error {
         #[source]
         simpaas_core::renderer::Error,
     ),
-    #[error("service doesn't consume this kind of resource")]
-    ResourceNotConsumed,
     #[error("service instance doesn't exist")]
     ServiceInstanceNotFound,
     #[error("service doesn't exist")]

@@ -8,6 +8,8 @@ spec:
   - name: nginx
     image: nginx
     tag: latest
+    databases:
+    - name: test
     exposes:
     - port: 80
       ingress:

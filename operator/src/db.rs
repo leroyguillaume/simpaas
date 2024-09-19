@@ -119,7 +119,7 @@ impl<KUBE: KubeClient, PASSWORDGENERATOR: PasswordGenerator, RENDERER: Renderer>
             .spec
             .consumes
             .database
-            .ok_or(Error::ResourceNotConsumed)?;
+            .ok_or(Error::DatabaseNotConsumed)?;
         let conn_info_vars = DatabaseConnectionInfoVariables {
             database: &db.spec.database,
             domain: &self.domain,
@@ -182,7 +182,7 @@ impl<KUBE: KubeClient, PASSWORDGENERATOR: PasswordGenerator, RENDERER: Renderer>
             .spec
             .consumes
             .database
-            .ok_or(Error::ResourceNotConsumed)?;
+            .ok_or(Error::DatabaseNotConsumed)?;
         let conn_info_vars = DatabaseConnectionInfoVariables {
             database: &db.spec.database,
             domain: &self.domain,
@@ -629,7 +629,7 @@ mod test {
                     ..Default::default()
                 };
                 let err = test(data, mocks).await.unwrap_err();
-                assert!(matches!(err, Error::ResourceNotConsumed));
+                assert!(matches!(err, Error::DatabaseNotConsumed));
             }
 
             #[tokio::test]
@@ -901,7 +901,7 @@ mod test {
             }
 
             #[tokio::test]
-            async fn resource_not_consumed() {
+            async fn database_not_consumed() {
                 let mut data = Data::default();
                 data.service.spec.consumes.database = None;
                 let mocks = Mocks {
@@ -910,7 +910,7 @@ mod test {
                     ..Default::default()
                 };
                 let err = test(data, mocks).await.unwrap_err();
-                assert!(matches!(err, Error::ResourceNotConsumed));
+                assert!(matches!(err, Error::DatabaseNotConsumed));
             }
 
             #[tokio::test]

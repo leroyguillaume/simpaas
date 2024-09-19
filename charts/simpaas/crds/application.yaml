@@ -25,6 +25,40 @@ spec:
                 default: []
                 items:
                   properties:
+                    databases:
+                      default: []
+                      items:
+                        properties:
+                          mapping:
+                            default:
+                              host: DATABASE_HOST
+                              name: DATABASE_NAME
+                              password: DATABASE_PASSWORD
+                              port: DATABASE_PORT
+                              user: DATABASE_USER
+                            properties:
+                              host:
+                                default: DATABASE_HOST
+                                type: string
+                              name:
+                                default: DATABASE_NAME
+                                type: string
+                              password:
+                                default: DATABASE_PASSWORD
+                                type: string
+                              port:
+                                default: DATABASE_PORT
+                                type: string
+                              user:
+                                default: DATABASE_USER
+                                type: string
+                            type: object
+                          name:
+                            type: string
+                        required:
+                        - name
+                        type: object
+                      type: array
                     exposes:
                       default: []
                       items:
