@@ -2,6 +2,8 @@
 
 use std::string::FromUtf8Error;
 
+use simpaas_core::DatabaseConnectionInfoRenderingError;
+
 pub type Result<VALUE = ()> = std::result::Result<VALUE, Error>;
 
 // Error
@@ -16,17 +18,17 @@ pub enum Error {
         #[source]
         std::io::Error,
     ),
-    #[error("liquid error: {0}")]
-    Liquid(
-        #[from]
-        #[source]
-        liquid::Error,
-    ),
     #[error("kubernetes error: {0}")]
     Kube(
         #[from]
         #[source]
         kube::Error,
+    ),
+    #[error("renderer error: {0}")]
+    Renderer(
+        #[from]
+        #[source]
+        simpaas_core::renderer::Error,
     ),
     #[error("service doesn't consume this kind of resource")]
     ResourceNotConsumed,
@@ -52,4 +54,13 @@ pub enum Error {
         #[source]
         serde_yaml::Error,
     ),
+}
+
+impl From<DatabaseConnectionInfoRenderingError> for Error {
+    fn from(err: DatabaseConnectionInfoRenderingError) -> Self {
+        match err {
+            DatabaseConnectionInfoRenderingError::Renderer(err) => Self::Renderer(err),
+            DatabaseConnectionInfoRenderingError::Utf8(err) => Self::Utf8(err),
+        }
+    }
 }

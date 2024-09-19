@@ -2,17 +2,16 @@ use std::{collections::BTreeMap, future::Future, sync::Arc};
 
 use k8s_openapi::api::{batch::v1::Job, core::v1::Secret};
 use kube::{api::ObjectMeta, Resource};
-use serde::{Deserialize, Serialize};
 use simpaas_core::{
     kube::{selector, KubeClient},
-    Database, SecretRef, Selector, Service, ServiceInstance,
+    renderer::Renderer,
+    Database, DatabaseConnectionInfoVariables, Service, ServiceInstance,
 };
 use tracing::{debug, info, instrument, warn};
 
 use crate::{
     err::{Error, Result},
     pwd::{DefaultPasswordGenerator, PasswordGenerator},
-    renderer::Renderer,
     LABEL_DATABASE,
 };
 
@@ -121,25 +120,20 @@ impl<KUBE: KubeClient, PASSWORDGENERATOR: PasswordGenerator, RENDERER: Renderer>
             .consumes
             .database
             .ok_or(Error::ResourceNotConsumed)?;
-        debug!("creating credentials secret");
-        let mut vars = Variables {
-            database: db.spec.database.clone(),
-            domain: self.domain.clone(),
-            instance: db.spec.instance.clone(),
-            name: name.into(),
-            namespace: ns.into(),
-            password_secret: None,
-            service: svc_inst.spec.service.clone(),
-            user: db.spec.user.clone(),
+        let conn_info_vars = DatabaseConnectionInfoVariables {
+            database: &db.spec.database,
+            domain: &self.domain,
+            instance: &db.spec.instance,
+            name,
+            namespace: ns,
+            user: &db.spec.user,
         };
-        let mut sec_name = vec![];
-        self.renderer
-            .render(&cons.password_secret.name, &vars, &mut sec_name)?;
-        let sec_name = String::from_utf8(sec_name)?;
+        let conn_info = cons.connection_info(&conn_info_vars, self.renderer.as_ref())?;
+        let vars = serde_json::to_value(&conn_info).unwrap();
         let mut sec = Secret {
             metadata: ObjectMeta {
                 labels: Some(BTreeMap::from_iter([(LABEL_DATABASE.into(), name.into())])),
-                name: Some(sec_name.clone()),
+                name: Some(conn_info.password_secret.name.clone()),
                 namespace: Some(ns.into()),
                 ..Default::default()
             },
@@ -149,16 +143,18 @@ impl<KUBE: KubeClient, PASSWORDGENERATOR: PasswordGenerator, RENDERER: Renderer>
             )])),
             ..Default::default()
         };
-        self.kube.patch_from(ns, &sec_name, &sec).await?;
+        self.kube
+            .patch_from(ns, &conn_info.password_secret.name, &sec)
+            .await?;
         sec.metadata.namespace = Some(db.spec.instance.namespace.clone());
         self.kube
-            .patch_from(&db.spec.instance.namespace, &sec_name, &sec)
+            .patch_from(
+                &db.spec.instance.namespace,
+                &conn_info.password_secret.name,
+                &sec,
+            )
             .await?;
         debug!("creating creation job");
-        vars.password_secret = Some(SecretRef {
-            key: cons.password_secret.key,
-            name: sec_name,
-        });
         let mut yaml = vec![];
         self.renderer.render(&cons.creation_job, &vars, &mut yaml)?;
         let job: Job = serde_yaml::from_slice(&yaml)?;
@@ -187,25 +183,17 @@ impl<KUBE: KubeClient, PASSWORDGENERATOR: PasswordGenerator, RENDERER: Renderer>
             .consumes
             .database
             .ok_or(Error::ResourceNotConsumed)?;
-        let mut vars = Variables {
-            database: db.spec.database.clone(),
-            domain: self.domain.clone(),
-            instance: db.spec.instance.clone(),
-            name: name.into(),
-            namespace: ns.into(),
-            password_secret: None,
-            service: svc_inst.spec.service,
-            user: db.spec.user.clone(),
+        let conn_info_vars = DatabaseConnectionInfoVariables {
+            database: &db.spec.database,
+            domain: &self.domain,
+            instance: &db.spec.instance,
+            name,
+            namespace: ns,
+            user: &db.spec.user,
         };
-        let mut sec_name = vec![];
-        self.renderer
-            .render(&cons.password_secret.name, &vars, &mut sec_name)?;
-        let sec_name = String::from_utf8(sec_name)?;
+        let conn_info = cons.connection_info(&conn_info_vars, self.renderer.as_ref())?;
+        let vars = serde_json::to_value(&conn_info).unwrap();
         debug!("creating drop job");
-        vars.password_secret = Some(SecretRef {
-            key: cons.password_secret.key,
-            name: sec_name,
-        });
         let mut yaml = vec![];
         self.renderer.render(&cons.drop_job, &vars, &mut yaml)?;
         let job: Job = serde_yaml::from_slice(&yaml)?;
@@ -218,32 +206,20 @@ impl<KUBE: KubeClient, PASSWORDGENERATOR: PasswordGenerator, RENDERER: Renderer>
     }
 }
 
-// Variables
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct Variables {
-    database: String,
-    domain: String,
-    instance: Selector,
-    name: String,
-    namespace: String,
-    password_secret: Option<SecretRef>,
-    service: String,
-    user: String,
-}
-
 // Tests
 
 #[cfg(test)]
 mod test {
+    use std::borrow::Cow;
+
     use mockall::predicate::*;
     use simpaas_core::{
-        kube::MockKubeClient, Chart, DatabaseConsumable, DatabaseSpec, ServiceConsumable,
+        kube::MockKubeClient, renderer::MockRenderer, Chart, DatabaseConnectionInfo,
+        DatabaseConsumable, DatabaseSpec, SecretRef, Selector, ServiceConsumable,
         ServiceInstanceSpec, ServiceSpec,
     };
 
-    use crate::{pwd::MockPasswordGenerator, renderer::MockRenderer, test::*};
+    use crate::{pwd::MockPasswordGenerator, test::*};
 
     use super::*;
 
@@ -398,6 +374,7 @@ mod test {
                 database: Database,
                 domain: &'static str,
                 instance: ServiceInstance,
+                host: &'static str,
                 job: Job,
                 job_name: &'static str,
                 name: &'static str,
@@ -421,10 +398,10 @@ mod test {
                     let consumable = DatabaseConsumable {
                         creation_job: "creation_job".into(),
                         drop_job: "drop_job".into(),
-                        host: "host".into(),
+                        host: "host_template".into(),
                         password_secret: SecretRef {
-                            name: "password_secret_name".into(),
-                            key: sec_name.into(),
+                            name: "secret_name_template".into(),
+                            key: sec_key.into(),
                         },
                         port: 5432,
                     };
@@ -447,6 +424,7 @@ mod test {
                             status: None,
                         },
                         domain: "domain",
+                        host: "host",
                         instance: ServiceInstance {
                             metadata: ObjectMeta {
                                 name: Some(svc_inst_name.into()),
@@ -514,6 +492,7 @@ mod test {
                 instance: Option<ServiceInstance>,
                 patch_job: bool,
                 patch_secret: bool,
+                render_host: bool,
                 render_secret_name: bool,
                 render_job: bool,
             }
@@ -572,21 +551,46 @@ mod test {
                     .times(mocks.generate_password as usize)
                     .returning(|| data.password.into());
                 let mut renderer = MockRenderer::new();
-                let vars = Variables {
-                    database: data.database.spec.database.clone(),
-                    domain: data.domain.into(),
-                    instance: data.database.spec.instance.clone(),
-                    name: data.name.into(),
-                    namespace: data.namespace.into(),
-                    password_secret: None,
-                    service: data.instance.spec.service.clone(),
-                    user: data.database.spec.user.clone(),
-                };
+                let conn_info_vars = serde_json::to_value(&DatabaseConnectionInfoVariables {
+                    database: &data.database.spec.database,
+                    domain: data.domain,
+                    instance: &data.database.spec.instance,
+                    name: data.name,
+                    namespace: data.namespace,
+                    user: &data.database.spec.user,
+                })
+                .unwrap();
+                let vars = serde_json::to_value(&DatabaseConnectionInfo {
+                    database: Cow::Borrowed(&data.database.spec.database),
+                    host: data.host.into(),
+                    instance: Cow::Borrowed(&data.database.spec.instance),
+                    name: Cow::Borrowed(data.name),
+                    namespace: Cow::Borrowed(data.namespace),
+                    port: data.consumable.port,
+                    password_secret: SecretRef {
+                        key: data.consumable.password_secret.key.clone(),
+                        name: data.secret_name.into(),
+                    },
+                    user: Cow::Borrowed(&data.database.spec.user),
+                })
+                .unwrap();
+                renderer
+                    .expect_render()
+                    .with(
+                        eq(data.consumable.host.clone()),
+                        eq(conn_info_vars.clone()),
+                        always(),
+                    )
+                    .times(mocks.render_host as usize)
+                    .returning(|_, _, out: &mut Vec<u8>| {
+                        *out = data.host.as_bytes().to_vec();
+                        Ok(())
+                    });
                 renderer
                     .expect_render()
                     .with(
                         eq(data.consumable.password_secret.name.clone()),
-                        eq(vars.clone()),
+                        eq(conn_info_vars),
                         always(),
                     )
                     .times(mocks.render_secret_name as usize)
@@ -594,13 +598,6 @@ mod test {
                         *out = data.secret_name.as_bytes().to_vec();
                         Ok(())
                     });
-                let vars = Variables {
-                    password_secret: Some(SecretRef {
-                        key: data.consumable.password_secret.key.clone(),
-                        name: data.secret_name.into(),
-                    }),
-                    ..vars
-                };
                 renderer
                     .expect_render()
                     .with(eq(data.consumable.creation_job.clone()), eq(vars), always())
@@ -664,6 +661,7 @@ mod test {
                     instance: Some(data.instance.clone()),
                     patch_job: true,
                     patch_secret: true,
+                    render_host: true,
                     render_job: true,
                     render_secret_name: true,
                 };
@@ -679,6 +677,7 @@ mod test {
                     get_service: Some(mock_fn(&data, |data: Data| Ok(Some(data.service.clone())))),
                     instance: Some(data.instance.clone()),
                     patch_secret: true,
+                    render_host: true,
                     render_job: true,
                     render_secret_name: true,
                     ..Default::default()
@@ -698,6 +697,7 @@ mod test {
                 consumable: DatabaseConsumable,
                 database: Database,
                 domain: &'static str,
+                host: &'static str,
                 instance: ServiceInstance,
                 job: Job,
                 job_name: &'static str,
@@ -718,10 +718,10 @@ mod test {
                     let consumable = DatabaseConsumable {
                         creation_job: "creation_job".into(),
                         drop_job: "drop_job".into(),
-                        host: "host".into(),
+                        host: "host_template".into(),
                         password_secret: SecretRef {
-                            name: "password_secret_name".into(),
-                            key: sec_name.into(),
+                            name: "secret_name_template".into(),
+                            key: "secret_key".into(),
                         },
                         port: 5432,
                     };
@@ -744,6 +744,7 @@ mod test {
                             status: None,
                         },
                         domain: "domain",
+                        host: "host",
                         instance: ServiceInstance {
                             metadata: ObjectMeta {
                                 name: Some(svc_inst_name.into()),
@@ -795,6 +796,7 @@ mod test {
                 get_service: Option<MockFn<kube::Result<Option<Service>>>>,
                 instance: Option<ServiceInstance>,
                 patch_job: bool,
+                render_host: bool,
                 render_secret_name: bool,
                 render_job: bool,
             }
@@ -830,21 +832,46 @@ mod test {
                     .times(mocks.patch_job as usize)
                     .returning(|_, _, _| async_ok(()));
                 let mut renderer = MockRenderer::new();
-                let vars = Variables {
-                    database: data.database.spec.database.clone(),
-                    domain: data.domain.into(),
-                    instance: data.database.spec.instance.clone(),
-                    name: data.name.into(),
-                    namespace: data.namespace.into(),
-                    password_secret: None,
-                    service: data.instance.spec.service.clone(),
-                    user: data.database.spec.user.clone(),
-                };
+                let conn_info_vars = serde_json::to_value(&DatabaseConnectionInfoVariables {
+                    database: &data.database.spec.database,
+                    domain: data.domain,
+                    instance: &data.database.spec.instance,
+                    name: data.name,
+                    namespace: data.namespace,
+                    user: &data.database.spec.user,
+                })
+                .unwrap();
+                let vars = serde_json::to_value(&DatabaseConnectionInfo {
+                    database: Cow::Borrowed(&data.database.spec.database),
+                    host: data.host.into(),
+                    instance: Cow::Borrowed(&data.database.spec.instance),
+                    name: Cow::Borrowed(data.name),
+                    namespace: Cow::Borrowed(data.namespace),
+                    port: data.consumable.port,
+                    password_secret: SecretRef {
+                        key: data.consumable.password_secret.key.clone(),
+                        name: data.secret_name.into(),
+                    },
+                    user: Cow::Borrowed(&data.database.spec.user),
+                })
+                .unwrap();
+                renderer
+                    .expect_render()
+                    .with(
+                        eq(data.consumable.host.clone()),
+                        eq(conn_info_vars.clone()),
+                        always(),
+                    )
+                    .times(mocks.render_host as usize)
+                    .returning(|_, _, out: &mut Vec<u8>| {
+                        *out = data.host.as_bytes().to_vec();
+                        Ok(())
+                    });
                 renderer
                     .expect_render()
                     .with(
                         eq(data.consumable.password_secret.name.clone()),
-                        eq(vars.clone()),
+                        eq(conn_info_vars),
                         always(),
                     )
                     .times(mocks.render_secret_name as usize)
@@ -852,13 +879,6 @@ mod test {
                         *out = data.secret_name.as_bytes().to_vec();
                         Ok(())
                     });
-                let vars = Variables {
-                    password_secret: Some(SecretRef {
-                        key: data.consumable.password_secret.key.clone(),
-                        name: data.secret_name.into(),
-                    }),
-                    ..vars
-                };
                 renderer
                     .expect_render()
                     .with(eq(data.consumable.drop_job.clone()), eq(vars), always())
@@ -920,6 +940,7 @@ mod test {
                     get_service: Some(mock_fn(&data, |data: Data| Ok(Some(data.service.clone())))),
                     instance: Some(data.instance.clone()),
                     patch_job: true,
+                    render_host: true,
                     render_job: true,
                     render_secret_name: true,
                 };
@@ -933,6 +954,7 @@ mod test {
                 let mocks = Mocks {
                     get_service: Some(mock_fn(&data, |data: Data| Ok(Some(data.service.clone())))),
                     instance: Some(data.instance.clone()),
+                    render_host: true,
                     render_job: true,
                     render_secret_name: true,
                     ..Default::default()

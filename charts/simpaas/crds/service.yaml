@@ -61,7 +61,7 @@ spec:
                         - name
                         type: object
                       port:
-                        format: uint32
+                        format: uint16
                         minimum: 0.0
                         type: integer
                     required:

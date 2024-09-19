@@ -20,11 +20,11 @@ use kube::{
 };
 use monitor::DefaultMonitor;
 use reconciler::{db::DatabaseReconciler, dep::DeployableReconciler};
-use renderer::LiquidRenderer;
 use serde::{de::DeserializeOwned, Serialize};
 use simpaas_core::{
     kube::{DefaultKubeClient, KubeClient},
     process::wait_for_sigint_or_sigterm,
+    renderer::LiquidRenderer,
     tracer::init_tracer,
     Application, Chart, Database, DatabaseStatus, DeployableStatus, Service, ServiceInstance,
 };
@@ -115,7 +115,6 @@ mod helm;
 mod monitor;
 mod pwd;
 mod reconciler;
-mod renderer;
 
 // Consts
 

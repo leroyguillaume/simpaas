@@ -3,11 +3,11 @@ use std::{borrow::Cow, collections::BTreeMap, sync::Arc};
 use kube::Resource;
 use serde::Serialize;
 use serde_json::json;
-use simpaas_core::{Application, Chart, Exposition};
+use simpaas_core::{renderer::Renderer, Application, Chart, Exposition};
 use tempfile::NamedTempFile;
 use tracing::{debug, info, instrument};
 
-use crate::{err::Result, helm::HelmRunner, renderer::Renderer};
+use crate::{err::Result, helm::HelmRunner};
 
 use super::Deployer;
 
@@ -110,13 +110,13 @@ struct ServiceVariable<'a> {
 
 #[cfg(test)]
 mod test {
-    use simpaas_core::{ApplicationSpec, Container, Ingress};
+    use simpaas_core::{renderer::MockRenderer, ApplicationSpec, Container, Ingress};
     use std::{path::PathBuf, sync::Mutex};
 
     use kube::api::ObjectMeta;
     use mockall::predicate::*;
 
-    use crate::{helm::MockHelmRunner, renderer::MockRenderer, test::*};
+    use crate::{helm::MockHelmRunner, test::*};
 
     use super::*;
 

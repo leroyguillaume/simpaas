@@ -1,7 +1,8 @@
-use std::{collections::BTreeSet, fmt::Debug};
+use std::{borrow::Cow, collections::BTreeSet, fmt::Debug, string::FromUtf8Error};
 
 use ::kube::CustomResource;
 use enum_display::EnumDisplay;
+use renderer::Renderer;
 use schemars::{gen::SchemaGenerator, schema::Schema, JsonSchema};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
@@ -10,7 +11,25 @@ use serde_json::{json, Map, Value};
 
 pub mod kube;
 pub mod process;
+pub mod renderer;
 pub mod tracer;
+
+// Error
+
+#[derive(Debug, thiserror::Error)]
+#[error("{0}")]
+pub enum DatabaseConnectionInfoRenderingError {
+    Renderer(
+        #[from]
+        #[source]
+        renderer::Error,
+    ),
+    Utf8(
+        #[from]
+        #[source]
+        FromUtf8Error,
+    ),
+}
 
 // Specs
 
@@ -71,7 +90,36 @@ pub struct DatabaseConsumable {
     pub host: String,
     #[serde(default = "default_database_password_secret")]
     pub password_secret: SecretRef,
-    pub port: u32,
+    pub port: u16,
+}
+
+impl DatabaseConsumable {
+    pub fn connection_info<'a, RENDERER: Renderer>(
+        &'a self,
+        vars: &'a DatabaseConnectionInfoVariables<'a>,
+        renderer: &RENDERER,
+    ) -> Result<DatabaseConnectionInfo<'a>, DatabaseConnectionInfoRenderingError> {
+        let json = serde_json::to_value(vars).unwrap();
+        let mut host = vec![];
+        renderer.render(&self.host, &json, &mut host)?;
+        let host = String::from_utf8(host)?;
+        let mut sec = vec![];
+        renderer.render(&self.password_secret.name, &json, &mut sec)?;
+        let sec = String::from_utf8(sec)?;
+        Ok(DatabaseConnectionInfo {
+            database: Cow::Borrowed(vars.database),
+            host,
+            instance: Cow::Borrowed(vars.instance),
+            name: Cow::Borrowed(vars.name),
+            namespace: Cow::Borrowed(vars.namespace),
+            port: self.port,
+            password_secret: SecretRef {
+                key: self.password_secret.key.clone(),
+                name: sec,
+            },
+            user: Cow::Borrowed(vars.user),
+        })
+    }
 }
 
 #[derive(Clone, CustomResource, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
@@ -188,6 +236,34 @@ pub enum DeployableStatus {
     DeploymentFailed,
     UndeploymentFailed,
     Unknown,
+}
+
+// Connection info
+
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DatabaseConnectionInfo<'a> {
+    pub database: Cow<'a, str>,
+    pub host: String,
+    pub instance: Cow<'a, Selector>,
+    pub name: Cow<'a, str>,
+    pub namespace: Cow<'a, str>,
+    pub port: u16,
+    pub password_secret: SecretRef,
+    pub user: Cow<'a, str>,
+}
+
+// Variables
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DatabaseConnectionInfoVariables<'a> {
+    pub database: &'a str,
+    pub domain: &'a str,
+    pub instance: &'a Selector,
+    pub name: &'a str,
+    pub namespace: &'a str,
+    pub user: &'a str,
 }
 
 // Defaults

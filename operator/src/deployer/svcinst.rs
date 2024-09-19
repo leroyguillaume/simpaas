@@ -2,14 +2,13 @@ use std::sync::Arc;
 
 use kube::Resource;
 use serde_json::json;
-use simpaas_core::{kube::KubeClient, Service, ServiceInstance};
+use simpaas_core::{kube::KubeClient, renderer::Renderer, Service, ServiceInstance};
 use tempfile::NamedTempFile;
 use tracing::{debug, info, instrument};
 
 use crate::{
     err::{Error, Result},
     helm::HelmRunner,
-    renderer::Renderer,
 };
 
 use super::Deployer;
@@ -83,9 +82,12 @@ mod test {
 
     use kube::api::ObjectMeta;
     use mockall::predicate::*;
-    use simpaas_core::{kube::MockKubeClient, Chart, Service, ServiceInstanceSpec, ServiceSpec};
+    use simpaas_core::{
+        kube::MockKubeClient, renderer::MockRenderer, Chart, Service, ServiceInstanceSpec,
+        ServiceSpec,
+    };
 
-    use crate::{helm::MockHelmRunner, renderer::MockRenderer, test::*};
+    use crate::{helm::MockHelmRunner, test::*};
 
     use super::*;
 

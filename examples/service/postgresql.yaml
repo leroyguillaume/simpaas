@@ -62,7 +62,7 @@ spec:
                       name: {{ passwordSecret.name }}
                       key: {{ passwordSecret.key }}
                 - name: HOST
-                  value: {{ instance.name }}-pgpool.{{ instance.namespace }}.svc.{{ domain }}
+                  value: {{ host }}
                 - name: NAME
                   value: {{ database }}
                 - name: PGPASSWORD
@@ -73,7 +73,7 @@ spec:
                 - name: PG_USER
                   value: postgres
                 - name: PORT
-                  value: "5432"
+                  value: "{{ port }}"
       dropJob: |
         apiVersion: batch/v1
         kind: Job
@@ -112,8 +112,8 @@ spec:
                 - name: PG_USER
                   value: postgres
                 - name: HOST
-                  value: {{ instance.name }}-pgpool.{{ instance.namespace }}.svc.{{ domain }}
+                  value: {{ host }}
                 - name: NAME
                   value: {{ database }}
                 - name: PORT
-                  value: "5432"
+                  value: "{{ port }}"
