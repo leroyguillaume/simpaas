@@ -2,18 +2,18 @@
 ingress:
   create: true
   rules:
-    {%- for domainAndRules in ingressRules %}
-    - host: {{ domainAndRules[0] }}
+    {%- for rule in ingressRules %}
+    - host: {{ rule.domain }}
       http:
         paths:
-          {%- for rule in domainAndRules[1] %}
-          - path: {{ rule.path }}
+          {%- for path in rule.paths %}
+          - path: {{ path.value }}
             pathType: Prefix
             backend:
               service:
-                name: {{ name }}-{{ rule.service }}
+                name: {{ name }}-{{ path.service }}
                 port:
-                  number: {{rule.port }}
+                  number: {{path.port }}
           {%- endfor %}
     {%- endfor %}
   {%- if tlsDomains.size > 0 %}
@@ -26,16 +26,16 @@ ingress:
     {%- endif %}
 {%- endif %}
 
-{%- if containers.size > 0 %}
+{%- if components.size > 0 %}
 components:
-  {%- for container in containers %}
-  - name: {{ container.name  }}
+  {%- for component in components %}
+  - name: {{ component.name  }}
     image:
-      repository: {{ container.image }}
-      tag: {{ container.tag }}
-    {%- if container.exposes.size > 0 %}
+      repository: {{ component.image.repository }}
+      tag: {{ component.image.tag }}
+    {%- if component.service and component.service.exposes.size > 0 %}
     ports:
-      {%- for exposition in container.exposes %}
+      {%- for exposition in component.service.exposes %}
       - containerPort: {{ exposition.port }}
       {%- endfor %}
     {%- endif %}

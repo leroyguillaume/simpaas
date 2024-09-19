@@ -36,33 +36,49 @@ impl<HELM: HelmRunner, RENDERER: Renderer> Deployer<Application>
     async fn deploy(&self, ns: &str, name: &str, app: &Application) -> Result {
         debug!("rendering variables into temporary file");
         let mut file = NamedTempFile::new()?;
+        let mut cmpts = vec![];
+        let mut ing_rules: BTreeMap<&String, IngressRuleVariable<'_>> = BTreeMap::new();
         let mut svcs = vec![];
-        let mut rules: BTreeMap<&str, Vec<IngressRuleVariable>> = BTreeMap::new();
-        for container in &app.spec.containers {
-            if !container.exposes.is_empty() {
-                svcs.push(ServiceVariable {
-                    exposes: Cow::Borrowed(&container.exposes),
-                    name: &container.name,
-                });
-                for exposition in &container.exposes {
-                    if let Some(ing) = &exposition.ingress {
-                        let var = IngressRuleVariable {
-                            path: &ing.path,
-                            port: exposition.port,
-                            service: &container.name,
+        for cont in &app.spec.containers {
+            if !cont.exposes.is_empty() {
+                for exp in &cont.exposes {
+                    if let Some(ing) = &exp.ingress {
+                        let ing_rule_path = IngressRulePathVariable {
+                            port: exp.port,
+                            service: &cont.name,
+                            value: &ing.path,
                         };
-                        if let Some(svc) = rules.get_mut(ing.domain.as_str()) {
-                            svc.push(var);
+                        if let Some(ing_rule) = ing_rules.get_mut(&ing.domain) {
+                            ing_rule.paths.push(ing_rule_path);
                         } else {
-                            rules.insert(&ing.domain, vec![var]);
+                            ing_rules.insert(
+                                &ing.domain,
+                                IngressRuleVariable {
+                                    domain: &ing.domain,
+                                    paths: vec![ing_rule_path],
+                                },
+                            );
                         }
                     }
                 }
-            }
+                svcs.push(ServiceVariable {
+                    exposes: Cow::Borrowed(&cont.exposes),
+                    name: &cont.name,
+                });
+            };
+            cmpts.push(ComponentVariable {
+                exposes: Cow::Borrowed(&cont.exposes),
+                image: ImageVariable {
+                    repository: &cont.image,
+                    tag: &cont.tag,
+                },
+                name: &cont.name,
+            });
         }
+        let ing_rules: Vec<_> = ing_rules.into_values().collect();
         let vars = json!({
-            "containers": app.spec.containers,
-            "ingressRules": rules,
+            "components": cmpts,
+            "ingressRules": ing_rules,
             "name": name,
             "services": svcs,
             "tlsDomains": app.spec.tls_domains,
@@ -89,20 +105,42 @@ impl<HELM: HelmRunner, RENDERER: Renderer> Deployer<Application>
     }
 }
 
-// Data structs
+// Variables
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ComponentVariable<'a> {
+    exposes: Cow<'a, Vec<Exposition>>,
+    image: ImageVariable<'a>,
+    name: &'a str,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ImageVariable<'a> {
+    repository: &'a str,
+    tag: &'a str,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct IngressRulePathVariable<'a> {
+    port: u16,
+    service: &'a str,
+    value: &'a str,
+}
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct IngressRuleVariable<'a> {
-    path: &'a str,
-    port: u16,
-    service: &'a str,
+    domain: &'a str,
+    paths: Vec<IngressRulePathVariable<'a>>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct ServiceVariable<'a> {
-    exposes: Cow<'a, [Exposition]>,
+    exposes: Cow<'a, Vec<Exposition>>,
     name: &'a str,
 }
 
@@ -134,7 +172,8 @@ mod test {
             struct Data {
                 application: Application,
                 chart: Chart,
-                ingress_rules: BTreeMap<&'static str, Vec<IngressRuleVariable<'static>>>,
+                components: Vec<ComponentVariable<'static>>,
+                ingress_rules: Vec<IngressRuleVariable<'static>>,
                 name: &'static str,
                 namespace: &'static str,
                 services: Vec<ServiceVariable<'static>>,
@@ -144,68 +183,66 @@ mod test {
                 fn default() -> Self {
                     let name = "name";
                     let ns = "namespace";
-                    let cont_name1 = "name1";
-                    let cont_name2 = "name2";
-                    let cont_name3 = "name3";
-                    let domain1 = "domain1";
-                    let domain2 = "domain2";
-                    let domain3 = "domain3";
-                    let path1 = "path1";
-                    let path2 = "path2";
-                    let path3 = "path3";
-                    let port1a = 8080;
-                    let port1b = 8081;
-                    let port1c = 8082;
-                    let port1d = 8083;
-                    let port2a = 8080;
-                    let port2b = 8081;
-                    let port2c = 8082;
-                    let exp1a = Exposition {
-                        port: port1a,
+                    let domain_1 = "container_domain_1";
+                    let domain_2 = "container_domain_2";
+                    let cont_1_name = "container_1_name";
+                    let cont_1_exposes = vec![];
+                    let cont_1_image = "container_1_image";
+                    let cont_1_tag = "container_1_tag";
+                    let cont_2_name = "container_2_name";
+                    let cont_2_port_1 = 2;
+                    let cont_2_exposes = vec![Exposition {
                         ingress: None,
-                    };
-                    let exp1b = Exposition {
-                        port: port1b,
-                        ingress: Some(Ingress {
-                            domain: domain1.into(),
-                            path: path1.into(),
-                        }),
-                    };
-                    let exp1c = Exposition {
-                        port: port1c,
-                        ingress: Some(Ingress {
-                            domain: domain2.into(),
-                            path: path1.into(),
-                        }),
-                    };
-                    let exp1d = Exposition {
-                        port: port1d,
-                        ingress: Some(Ingress {
-                            domain: domain1.into(),
-                            path: path2.into(),
-                        }),
-                    };
-                    let exp2a = Exposition {
-                        port: port2a,
-                        ingress: Some(Ingress {
-                            domain: domain2.into(),
-                            path: path2.into(),
-                        }),
-                    };
-                    let exp2b = Exposition {
-                        port: port2b,
-                        ingress: Some(Ingress {
-                            domain: domain1.into(),
-                            path: path3.into(),
-                        }),
-                    };
-                    let exp2c = Exposition {
-                        port: port2c,
-                        ingress: Some(Ingress {
-                            domain: domain3.into(),
-                            path: path3.into(),
-                        }),
-                    };
+                        port: cont_2_port_1,
+                    }];
+                    let cont_2_image = "container_2_image";
+                    let cont_2_tag = "container_2_tag";
+                    let cont_3_name = "container_3_name";
+                    let cont_3_port_1 = 31;
+                    let cont_3_port_2 = 32;
+                    let cont_3_port_3 = 33;
+                    let cont_3_port_2_path = "container_3_port_2_path";
+                    let cont_3_port_3_path = "container_3_port_3_path";
+                    let cont_3_exposes = vec![
+                        Exposition {
+                            ingress: None,
+                            port: cont_3_port_1,
+                        },
+                        Exposition {
+                            ingress: Some(Ingress {
+                                domain: domain_1.into(),
+                                path: cont_3_port_2_path.into(),
+                            }),
+                            port: cont_3_port_2,
+                        },
+                        Exposition {
+                            ingress: Some(Ingress {
+                                domain: domain_2.into(),
+                                path: cont_3_port_3_path.into(),
+                            }),
+                            port: cont_3_port_3,
+                        },
+                    ];
+                    let cont_3_image = "container_3_image";
+                    let cont_3_tag = "container_3_tag";
+                    let cont_4_name = "container_4_name";
+                    let cont_4_port_1 = 31;
+                    let cont_4_port_1_path = "container_4_port_1_path";
+                    let cont_4_exposes = vec![
+                        Exposition {
+                            ingress: None,
+                            port: cont_4_port_1,
+                        },
+                        Exposition {
+                            ingress: Some(Ingress {
+                                domain: domain_1.into(),
+                                path: cont_4_port_1_path.into(),
+                            }),
+                            port: cont_4_port_1,
+                        },
+                    ];
+                    let cont_4_image = "container_4_image";
+                    let cont_4_tag = "container_4_tag";
                     Self {
                         application: Application {
                             metadata: ObjectMeta {
@@ -216,27 +253,28 @@ mod test {
                             spec: ApplicationSpec {
                                 containers: vec![
                                     Container {
-                                        exposes: vec![],
-                                        image: "image".into(),
-                                        name: cont_name1.into(),
-                                        tag: "tag".into(),
+                                        exposes: cont_1_exposes.clone(),
+                                        image: cont_1_image.into(),
+                                        name: cont_1_name.into(),
+                                        tag: cont_1_tag.into(),
                                     },
                                     Container {
-                                        exposes: vec![
-                                            exp1a.clone(),
-                                            exp1b.clone(),
-                                            exp1c.clone(),
-                                            exp1d.clone(),
-                                        ],
-                                        image: "image".into(),
-                                        name: cont_name2.into(),
-                                        tag: "tag".into(),
+                                        exposes: cont_2_exposes.clone(),
+                                        image: cont_2_image.into(),
+                                        name: cont_2_name.into(),
+                                        tag: cont_2_tag.into(),
                                     },
                                     Container {
-                                        exposes: vec![exp2a.clone(), exp2b.clone(), exp2c.clone()],
-                                        image: "image".into(),
-                                        name: cont_name3.into(),
-                                        tag: "tag".into(),
+                                        exposes: cont_3_exposes.clone(),
+                                        image: cont_3_image.into(),
+                                        name: cont_3_name.into(),
+                                        tag: cont_3_tag.into(),
+                                    },
+                                    Container {
+                                        exposes: cont_4_exposes.clone(),
+                                        image: cont_4_image.into(),
+                                        name: cont_4_name.into(),
+                                        tag: cont_4_tag.into(),
                                     },
                                 ],
                                 ..Default::default()
@@ -248,61 +286,79 @@ mod test {
                             values: "values".into(),
                             version: None,
                         },
-                        ingress_rules: BTreeMap::from_iter([
-                            (
-                                domain1,
-                                vec![
-                                    IngressRuleVariable {
-                                        path: path1,
-                                        port: port1b,
-                                        service: cont_name2,
+                        components: vec![
+                            ComponentVariable {
+                                exposes: Cow::Owned(cont_1_exposes),
+                                image: ImageVariable {
+                                    repository: cont_1_image,
+                                    tag: cont_1_tag,
+                                },
+                                name: cont_1_name,
+                            },
+                            ComponentVariable {
+                                exposes: Cow::Owned(cont_2_exposes.clone()),
+                                image: ImageVariable {
+                                    repository: cont_2_image,
+                                    tag: cont_2_tag,
+                                },
+                                name: cont_2_name,
+                            },
+                            ComponentVariable {
+                                exposes: Cow::Owned(cont_3_exposes.clone()),
+                                image: ImageVariable {
+                                    repository: cont_3_image,
+                                    tag: cont_3_tag,
+                                },
+                                name: cont_3_name,
+                            },
+                            ComponentVariable {
+                                exposes: Cow::Owned(cont_4_exposes.clone()),
+                                image: ImageVariable {
+                                    repository: cont_4_image,
+                                    tag: cont_4_tag,
+                                },
+                                name: cont_4_name,
+                            },
+                        ],
+                        ingress_rules: vec![
+                            IngressRuleVariable {
+                                domain: domain_1,
+                                paths: vec![
+                                    IngressRulePathVariable {
+                                        port: cont_3_port_2,
+                                        service: cont_3_name,
+                                        value: cont_3_port_2_path,
                                     },
-                                    IngressRuleVariable {
-                                        path: path2,
-                                        port: port1d,
-                                        service: cont_name2,
-                                    },
-                                    IngressRuleVariable {
-                                        path: path3,
-                                        port: port2b,
-                                        service: cont_name3,
+                                    IngressRulePathVariable {
+                                        port: cont_4_port_1,
+                                        service: cont_4_name,
+                                        value: cont_4_port_1_path,
                                     },
                                 ],
-                            ),
-                            (
-                                domain2,
-                                vec![
-                                    IngressRuleVariable {
-                                        path: path1,
-                                        port: port1c,
-                                        service: cont_name2,
-                                    },
-                                    IngressRuleVariable {
-                                        path: path2,
-                                        port: port2a,
-                                        service: cont_name3,
-                                    },
-                                ],
-                            ),
-                            (
-                                domain3,
-                                vec![IngressRuleVariable {
-                                    path: path3,
-                                    port: port2c,
-                                    service: cont_name3,
+                            },
+                            IngressRuleVariable {
+                                domain: domain_2,
+                                paths: vec![IngressRulePathVariable {
+                                    port: cont_3_port_3,
+                                    service: cont_3_name,
+                                    value: cont_3_port_3_path,
                                 }],
-                            ),
-                        ]),
+                            },
+                        ],
                         name,
                         namespace: ns,
                         services: vec![
                             ServiceVariable {
-                                exposes: Cow::Owned(vec![exp1a, exp1b, exp1c, exp1d]),
-                                name: cont_name2,
+                                exposes: Cow::Owned(cont_2_exposes),
+                                name: cont_2_name,
                             },
                             ServiceVariable {
-                                exposes: Cow::Owned(vec![exp2a, exp2b, exp2c]),
-                                name: cont_name3,
+                                exposes: Cow::Owned(cont_3_exposes),
+                                name: cont_3_name,
+                            },
+                            ServiceVariable {
+                                exposes: Cow::Owned(cont_4_exposes),
+                                name: cont_4_name,
                             },
                         ],
                     }
@@ -334,7 +390,7 @@ mod test {
                     .returning(|_, _, _, _, _| async_ok(()));
                 let mut renderer = MockRenderer::new();
                 let vars = json!({
-                    "containers": data.application.spec.containers,
+                    "components": data.components,
                     "ingressRules": data.ingress_rules,
                     "name": data.name,
                     "services": data.services,
