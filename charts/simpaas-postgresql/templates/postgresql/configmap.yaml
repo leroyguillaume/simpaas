@@ -1,9 +1,17 @@
+{{- if .Values.postgresql.hooksConfigMap.create }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: {{ include "simpaas-postgresql.postgresql.name" . }}
+  {{- with .Values.postgresql.hooksConfigMap.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
   labels:
     {{- include "simpaas-postgresql.labels" . | nindent 4 }}
+    {{- with .Values.postgresql.hooksConfigMap.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  name: {{ include "simpaas-postgresql.postgresql.hooksConfigMap.name" . }}
 data:
   pre-stop.sh: |
     #!/bin/bash
@@ -77,7 +85,6 @@ data:
         info "PG stopped including primary switchover in $PG_STOP_DURATION. Waiting additional $WAIT_TO_PG_POOL_TIME seconds for PG pool"
         sleep $WAIT_TO_PG_POOL_TIME
     fi
-
   readiness-probe.sh: |
     #!/bin/bash
     set -o errexit
@@ -125,3 +132,4 @@ data:
       # DB test failed - report failure
       exit 1
     fi
+{{- end }}

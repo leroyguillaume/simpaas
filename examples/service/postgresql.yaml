@@ -7,9 +7,10 @@ spec:
   chart:
     name: charts/simpaas-postgresql
     values: |
-      labels:
-        simpaas.gleroy.dev/service: {{ service }}
-        simpaas.gleroy.dev/service-instance: {{ name }}
+      common:
+        labels:
+          simpaas.gleroy.dev/service: {{ service }}
+          simpaas.gleroy.dev/service-instance: {{ name }}
   consumes:
     database:
       host: '{{ instance.name }}-pgpool.{{ instance.namespace }}.svc.{{ domain }}'

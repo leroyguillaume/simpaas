@@ -1,15 +1,93 @@
+{{ if .Values.pgpool.service.create }}
+{{- $annotations := merge .Values.pgpool.service.annotations .Values.common.service.annotations -}}
+{{- $externalTrafficPolicy := default .Values.common.service.externalTrafficPolicy .Values.pgpool.service.externalTrafficPolicy -}}
+{{- $internalTrafficPolicy := default .Values.common.service.internalTrafficPolicy .Values.pgpool.service.internalTrafficPolicy -}}
+{{- $ipFamilies := concat .Values.common.service.ipFamilies .Values.pgpool.service.ipFamilies -}}
+{{- $ipFamilyPolicy := default .Values.common.service.ipFamilyPolicy .Values.pgpool.service.ipFamilyPolicy -}}
+{{- $labels := merge .Values.pgpool.service.labels .Values.common.service.labels -}}
+{{- $loadBalancerClass := default .Values.common.service.loadBalancerClass .Values.pgpool.service.loadBalancerClass -}}
+{{- $loadBalancerSourceRanges := concat .Values.common.service.loadBalancerSourceRanges .Values.pgpool.service.loadBalancerSourceRanges -}}
+{{- $sessionAffinity := default .Values.common.service.sessionAffinity .Values.pgpool.service.sessionAffinity -}}
+{{- $sessionAffinityConfig := merge .Values.pgpool.service.sessionAffinityConfig .Values.common.service.sessionAffinityConfig -}}
+{{- $trafficDistribution := default .Values.common.service.trafficDistribution .Values.pgpool.service.trafficDistribution -}}
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ include "simpaas-postgresql.pgpool.name" . }}
+  {{- with $annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
   labels:
-    {{- include "simpaas-postgresql.pgpool.labels" . | nindent 4 }}
+    {{- include "simpaas-postgresql.labels" . | nindent 4 }}
+    {{- with $labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  name: {{ include "simpaas-postgresql.pgpool.name" . }}
 spec:
-  type: {{ .Values.pgpool.service.type }}
+  {{- if not (eq nil .Values.pgpool.service.allocateLoadBalancerNodePorts) }}
+  allocateLoadBalancerNodePorts: {{ .Values.pgpool.service.allocateLoadBalancerNodePorts }}
+  {{- end }}
+  {{- if .Values.pgpool.service.clusterIp }}
+  clusterIP: {{ .Values.pgpool.service.clusterIp }}
+  {{- end }}
+  {{- with .Values.pgpool.service.clusterIPs }}
+  clusterIPs:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- with .Values.pgpool.service.externalIPs }}
+  externalIPs:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- if .Values.pgpool.service.externalName }}
+  externalName: {{ .Values.pgpool.service.externalName }}
+  {{- end }}
+  {{- if $externalTrafficPolicy }}
+  externalTrafficPolicy: {{ $externalTrafficPolicy }}
+  {{- end }}
+  {{- if .Values.pgpool.service.healthCheckNodePort }}
+  healthCheckNodePort: {{ .Values.pgpool.service.healthCheckNodePort }}
+  {{- end }}
+  {{- if $internalTrafficPolicy }}
+  internalTrafficPolicy: {{ $internalTrafficPolicy }}
+  {{- end }}
+  {{- with $ipFamilies }}
+  ipFamilies:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- if $ipFamilyPolicy }}
+  ipFamilyPolicy: {{ $ipFamilyPolicy }}
+  {{- end }}
+  {{- if $loadBalancerClass }}
+  loadBalancerClass: {{ $loadBalancerClass }}
+  {{- end }}
+  {{- if .Values.pgpool.service.loadBalancerIP }}
+  loadBalancerIP: {{ .Values.pgpool.service.loadBalancerIP }}
+  {{- end }}
+  {{- with $loadBalancerSourceRanges }}
+  loadBalancerSourceRanges:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
   ports:
-    - port: {{ .Values.pgpool.service.port }}
-      targetPort: postgresql
-      protocol: TCP
-      name: postgresql
+    - name: postgresql
+      {{- if .Values.pgpool.service.nodePort }}
+      nodePort: {{ .Values.pgpool.service.nodePort }}
+      {{- end }}
+      port: {{ .Values.pgpool.service.port }}
+      targetPort: {{ .Values.pgpool.service.port }}
+  {{- if not (eq nil .Values.pgpool.service.publishNotReadyAddresses) }}
+  publishNotReadyAddresses: {{ .Values.pgpool.service.publishNotReadyAddresses }}
+  {{- end }}
   selector:
-    {{- include "simpaas-postgresql.pgpool.labels" . | nindent 4 }}
+    {{- include "simpaas-postgresql.pgpool.podLabels" . | nindent 6 }}
+  {{- if $sessionAffinity }}
+  sessionAffinity: {{ $sessionAffinity }}
+  {{- end }}
+  {{- with $sessionAffinityConfig }}
+  sessionAffinityConfig:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- if $trafficDistribution }}
+  trafficDistribution: {{ $trafficDistribution }}
+  {{- end }}
+  type: {{ .Values.pgpool.service.type }}
+{{- end }}

@@ -1,0 +1,48 @@
+{{- if .Values.backup.persistence.enabled }}
+{{- $annotations := merge .Values.backup.persistence.annotations .Values.common.persistence.annotations -}}
+{{- $labels := merge .Values.backup.persistence.labels .Values.common.persistence.labels -}}
+{{- $storageClassName := default .Values.common.persistence.storageClassName .Values.backup.persistence.storageClassName }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  {{- with $annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- with $labels }}
+  labels:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  name: {{ include "simpaas-postgresql.backup.pvc.name" . }}
+spec:
+  accessModes:
+    {{- toYaml .Values.backup.persistence.accessModes | nindent 10 }}
+  {{- with .Values.backup.persistence.dataSource }}
+  dataSource:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- with .Values.backup.persistence.dataSourceRef }}
+  dataSourceRef:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- with .Values.backup.persistence.resources }}
+  resources:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- with .Values.backup.persistence.selector }}
+  selector:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- if $storageClassName }}
+  storageClassName: {{ $storageClassName }}
+  {{- end }}
+  {{- if .Values.backup.persistence.volumeAttributesClassName }}
+  volumeAttributesClassName: {{ .Values.backup.persistence.volumeAttributesClassName }}
+  {{- end }}
+  {{- if .Values.backup.persistence.volumeMode }}
+  volumeMode: {{ .Values.backup.persistence.volumeMode }}
+  {{- end }}
+  {{- if .Values.backup.persistence.volumeName }}
+  volumeName: {{ .Values.backup.persistence.volumeName }}
+  {{- end }}
+{{- end }}

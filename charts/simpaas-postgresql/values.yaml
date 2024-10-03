@@ -1,232 +1,525 @@
-nameOverride: ""
+name: ~
 
-clusterDomain: cluster.local
+common:
+  clusterDomain: cluster.local
 
-image:
-  registry: ""
-  pullSecrets: []
-  pullPolicy: IfNotPresent
+  image:
+    registry: ~
+    tag: ~
+  imagePullPolicy: IfNotPresent
+  env: []
+  envFrom: []
 
-labels: {}
+  annotations: {}
+  labels: {}
 
-podAnnotations: {}
-podLabels: {}
+  podAnnotations: {}
+  podLabels: {}
 
-podSecurityContext:
-  fsGroupChangePolicy: Always
-  fsGroup: 1001
-securityContext:
-  runAsUser: 1001
-  runAsGroup: 1001
-  runAsNonRoot: true
-  privileged: false
-  readOnlyRootFilesystem: true
-  allowPrivilegeEscalation: false
+  jobAnnotations: {}
+  jobLabels: {}
 
-priotityClassName: ""
+  affinity: {}
+  containers: []
+  dnsConfig: {}
+  dnsPolicy: ~
+  ephemeralContainers: []
+  hostAliases: []
+  imagePullSecrets: []
+  initContainers: []
+  nodeName: ~
+  nodeSelector: {}
+  os: {}
+  preemptionPolicy: ~
+  priorityClassName: ~
+  readinessGates: []
+  resourceClaims: []
+  runtimeClassName: ~
+  schedulerName: ~
+  schedulingGates: []
+  securityContext:
+    fsGroupChangePolicy: Always
+    fsGroup: 1001
+  subdomain: ~
+  tolerations: {}
+  topologySpreadConstraints: {}
+  volumes: []
 
-schedulerName: ""
+  containerSecurityContext:
+    runAsUser: 1001
+    runAsGroup: 1001
+    runAsNonRoot: true
+    privileged: false
+    readOnlyRootFilesystem: true
+    allowPrivilegeEscalation: false
+  terminationMessagePath: ~
+  terminationMessagePolicy: ~
+  volumeDevices: []
+  volumeMounts: []
 
-topologySpreadConstraints: []
+  persistence:
+    annotations: {}
+    labels: {}
 
-hostAliases: []
+    storageClassName: ~
 
-initContainers: []
+  service:
+    annotations: {}
+    labels: {}
 
-env: []
-
-volumeMounts: []
-volumes: []
-
-nodeSelector: {}
-affinity: {}
-tolerations: []
-
-secret:
-  create: true
-  name: ""
-  key:
-    postgresPassword: postgres-password
-    repmgrPassword: repmgr-password
-    pgpoolAdminPassword: pgpool-admin-password
+    externalTrafficPolicy: ~
+    internalTrafficPolicy: ~
+    ipFamilies: []
+    ipFamilyPolicy: ~
+    loadBalancerClass: ~
+    loadBalancerSourceRanges: []
+    sessionAffinity: ~
+    sessionAffinityConfig: {}
+    trafficDistribution: ~
 
 serviceAccount:
   create: true
-  name: ""
-  annotations: {}
-  automount: true
 
-port: 5432
-db:
-  postgres: postgres
-  repmgr: repmgr
-user:
-  postgres: postgres
-  repmgr: repmgr
+  name: ~
+
+  annotations: {}
+  labels: {}
+
+  automountServiceAccountToken: true
+  imagePullSecrets: []
+  kind: ~
+  secrets: []
+
+secret:
+  create: true
+
+  annotations: {}
+  labels: {}
+  name: ~
+
+  pgpoolAdminPasswordKey: pgpool-admin-password
+  postgresPasswordKey: postgres-password
+  repmgrPasswordKey: repmgr-password
 
 postgresql:
-  nameOverride: ""
-
-  image:
-    registry: ""
-    repository: bitnami/postgresql-repmgr
-    tag: 16.4.0
-    pullSecrets: []
-    pullPolicy: ""
+  postgresDatabase: postgres
+  postgresUser: postgres
+  repmgrDatabase: repmgr
+  repmgrUser: repmgr
 
   replicas: 3
+  image:
+    registry: ~
+    repository: bitnami/postgresql-repmgr
+    tag: 16.4.0
+  imagePullPolicy: ~
+  env: []
+  envFrom: []
+  resources: {}
 
-  podManagementPolicy: Parallel
+  annotations: {}
+  labels: {}
+  name: ~
 
-  updateStrategy:
-    type: RollingUpdate
+  podAnnotations: {}
+  podLabels: {}
 
+  minReadySeconds: ~
+  ordinals: {}
   persistentVolumeClaimRetentionPolicy:
     whenDeleted: Delete
     whenScaled: Delete
+  podManagementPolicy: Parallel
+  revisionHistoryLimit: ~
+  updateStrategy:
+    type: RollingUpdate
 
-  podAnnotations: {}
-  podLabels: {}
-
-  podSecurityContext: {}
-  securityContext: {}
-
-  priotityClassName: ""
-
-  schedulerName: ""
-
-  topologySpreadConstraints: []
-
+  activeDeadlineSeconds: ~
+  affinity: {}
+  automountServiceAccountToken: ~
+  dnsConfig: {}
+  dnsPolicy: ~
+  containers: []
+  ephemeralContainers: []
+  enableServiceLinks: ~
   hostAliases: []
-
-  terminationGracePeriodSeconds: ""
-
+  hostIPC: ~
+  hostNetwork: ~
+  hostPID: ~
+  hostUsers: ~
+  hostname: ~
+  imagePullSecrets: []
   initContainers: []
+  nodeName: ~
+  nodeSelector: {}
+  os: {}
+  preemptionPolicy: ~
+  priority: ~
+  priorityClassName: ~
+  readinessGates: []
+  resourceClaims: []
+  restartPolicy: ~
+  runtimeClassName: ~
+  schedulerName: ~
+  schedulingGates: []
+  securityContext: {}
+  setHostnameAsFQDN: ~
+  shareProcessNamespace: ~
+  subdomain: ~
+  terminationGracePeriodSeconds: ~
+  tolerations: {}
+  topologySpreadConstraints: {}
+  volumes: []
+  volumeMounts: []
+  workingDir: ~
 
-  command: []
   args: []
-
-  lifecycle: {}
-  preStopDelayAfterPgStopSeconds: 25
-
-  env: []
-
+  command: []
+  lifecycle:
+    preStop:
+      exec:
+        command:
+          - ./pre-stop,sh
+          - "25"
   livenessProbe:
-    enabled: true
-    handler: {}
-    initialDelaySeconds: 30
-    periodSeconds: 10
-    timeoutSeconds: 5
-    successThreshold: 1
+    exec:
+      command:
+        - bash
+        - -ec
+        - PGPASSWORD=$POSTGRES_PASSWORD psql -w -h 127.0.0.1 -p $POSTGRESQL_PORT_NUMBER -U $POSTGRES_USER -d $POSTGRES_DB -c 'SELECT 1' > /dev/null
     failureThreshold: 5
-  readinessProbe:
-    enabled: true
     initialDelaySeconds: 5
     periodSeconds: 5
-    timeoutSeconds: 5
     successThreshold: 1
+    timeoutSeconds: 5
+  readinessProbe:
+    exec:
+      command:
+        - bash
+        - -ec
+        - exec pg_isready -h 127.0.0.1 -p $POSTGRESQL_PORT_NUMBER -U $POSTGRES_USER
     failureThreshold: 5
-  startupProbe:
-    enabled: true
     initialDelaySeconds: 5
-    periodSeconds: 10
-    timeoutSeconds: 5
+    periodSeconds: 5
     successThreshold: 1
-    failureThreshold: 10
-
-  resources: {}
-
-  volumeMounts: []
-  volumes: []
-
-  nodeSelector: {}
-  affinity: {}
-  tolerations: []
-
-  service:
-    type: ClusterIP
-    port: 5432
+    timeoutSeconds: 5
+  resizePolicy: {}
+  containerSecurityContext: {}
+  startupProbe: {}
+  stdin: ~
+  stdinOnce: ~
+  terminationMessagePath: ~
+  terminationMessagePolicy: ~
+  tty: ~
+  volumeDevices: []
 
   persistence:
-    storageClassName: ""
+    enabled: true
+
     mountPath: /postgresql
+
     accessModes:
       - ReadWriteOnce
-    size: 10G
+    resources:
+      requests:
+        storage: 8Gi
+
+    annotations: {}
+    labels: {}
+    name: data
+
+    dataSource: {}
+    dataSourceRef: {}
+    selector: {}
+    storageClassName: ~
+    volumeAttributesClassName: ~
+    volumeMode: ~
+    volumeName: ~
+
+  service:
+    create: true
+
+    annotations: {}
+    labels: {}
+
+    port: 5432
+    type: ClusterIP
+    nodePort: ~
+
+    allocateLoadBalancerNodePorts: ~
+    clusterIP: ~
+    clusterIPs: []
+    externalIPs: []
+    externalName: ~
+    externalTrafficPolicy: ~
+    healthCheckNodePort: ~
+    internalTrafficPolicy: ~
+    ipFamilies: []
+    ipFamilyPolicy: ~
+    loadBalancerClass: ~
+    loadBalancerIP: ~
+    loadBalancerSourceRanges: []
+    publishNotReadyAddresses: ~
+    sessionAffinity: ~
+    sessionAffinityConfig: {}
+    trafficDistribution: ~
+
+  hooksConfigMap:
+    create: true
+
+    name: ~
+
+    annotations: {}
+    labels: {}
 
 pgpool:
-  nameOverride: ""
+  enabled: true
 
-  image:
-    registry: ""
-    repository: bitnami/pgpool
-    tag: 4.5.2
-    pullSecrets: []
-    pullPolicy: ""
+  adminUser: pgpool_admin
 
   replicas: 1
+  image:
+    registry: ~
+    repository: bitnami/pgpool
+    tag: 4.5.2
+  imagePullPolicy: ~
+  env: []
+  envFrom: []
+  resources: {}
+
+  annotations: {}
+  labels: {}
+  name: ~
 
   podAnnotations: {}
   podLabels: {}
 
-  podSecurityContext: {}
-  securityContext: {}
+  minReadySeconds: ~
+  progressDeadlineSeconds: ~
+  revisionHistoryLimit: ~
+  strategy: {}
 
-  priotityClassName: ""
-
-  schedulerName: ""
-
-  topologySpreadConstraints: []
-
+  activeDeadlineSeconds: ~
+  affinity: {}
+  automountServiceAccountToken: ~
+  dnsConfig: {}
+  dnsPolicy: ~
+  containers: []
+  ephemeralContainers: []
+  enableServiceLinks: ~
   hostAliases: []
-
-  terminationGracePeriodSeconds: ""
-
+  hostIPC: ~
+  hostNetwork: ~
+  hostPID: ~
+  hostUsers: ~
+  hostname: ~
+  imagePullSecrets: []
   initContainers: []
+  nodeName: ~
+  nodeSelector: {}
+  os: {}
+  preemptionPolicy: ~
+  priority: ~
+  priorityClassName: ~
+  readinessGates: []
+  resourceClaims: []
+  restartPolicy: ~
+  runtimeClassName: ~
+  schedulerName: ~
+  schedulingGates: []
+  securityContext: {}
+  setHostnameAsFQDN: ~
+  shareProcessNamespace: ~
+  subdomain: ~
+  terminationGracePeriodSeconds: ~
+  tolerations: {}
+  topologySpreadConstraints: {}
+  volumes: []
+  volumeMounts: []
+  workingDir: ~
 
-  command: []
   args: []
-
+  command: []
   lifecycle: {}
-
-  env: []
-
   livenessProbe:
-    enabled: true
-    handler: {}
+    exec:
+      command:
+        - /opt/bitnami/scripts/pgpool/healthcheck.sh
+    failureThreshold: 5
     initialDelaySeconds: 30
     periodSeconds: 10
-    timeoutSeconds: 5
     successThreshold: 1
-    failureThreshold: 5
+    timeoutSeconds: 5
   readinessProbe:
-    enabled: true
-    handler: {}
+    exec:
+      command:
+        - bash
+        - -ec
+        - PGPASSWORD=$PGPOOL_POSTGRES_PASSWORD psql -tA -h /opt/bitnami/pgpool/tmp -U $PGPOOL_POSTGRES_USERNAME -c 'SELECT 1' > /dev/null
+    failureThreshold: 5
     initialDelaySeconds: 5
     periodSeconds: 5
-    timeoutSeconds: 5
     successThreshold: 1
-    failureThreshold: 5
-  startupProbe:
-    enabled: true
-    handler: {}
-    initialDelaySeconds: 5
-    periodSeconds: 10
     timeoutSeconds: 5
-    successThreshold: 1
-    failureThreshold: 10
-
-  resources: {}
-
-  volumeMounts: []
-  volumes: []
-
-  nodeSelector: {}
-  affinity: {}
-  tolerations: []
+  resizePolicy: {}
+  containerSecurityContext: {}
+  startupProbe: {}
+  stdin: ~
+  stdinOnce: ~
+  terminationMessagePath: ~
+  terminationMessagePolicy: ~
+  tty: ~
+  volumeDevices: []
 
   service:
-    type: ClusterIP
-    port: 5432
+    create: true
 
-  adminUser: admin
+    annotations: {}
+    labels: {}
+
+    port: 5432
+    type: ClusterIP
+    nodePort: ~
+
+    allocateLoadBalancerNodePorts: ~
+    clusterIP: ~
+    clusterIPs: []
+    externalIPs: []
+    externalName: ~
+    externalTrafficPolicy: ~
+    healthCheckNodePort: ~
+    internalTrafficPolicy: ~
+    ipFamilies: []
+    ipFamilyPolicy: ~
+    loadBalancerClass: ~
+    loadBalancerIP: ~
+    loadBalancerSourceRanges: []
+    publishNotReadyAddresses: ~
+    sessionAffinity: ~
+    sessionAffinityConfig: {}
+    trafficDistribution: ~
+
+backup:
+  enabled: true
+
+  retentionDays: 31
+
+  schedule: "@daily"
+
+  image:
+    registry: ~
+    repository: bitnami/postgresql
+    tag: 16.4.0
+  imagePullPolicy: ~
+  env: []
+  envFrom: []
+  resources: {}
+
+  annotations: {}
+  labels: {}
+  name: ~
+
+  podAnnotations: {}
+  podLabels: {}
+
+  jobAnnotations: {}
+  jobLabels: {}
+
+  concurrencyPolicy: ~
+  failedJobsHistoryLimit: ~
+  startingDeadlineSeconds: ~
+  successfulJobsHistoryLimit: ~
+  suspend: ~
+  timeZone: ~
+
+  activeDeadlineSeconds: ~
+  backoffLimit: ~
+  backoffLimitPerIndex: ~
+  completionMode: ~
+  completions: ~
+  maxFailedIndexes: ~
+  parallelism: ~
+  podFailurePolicy: {}
+  podReplacementPolicy: ~
+  successPolicy: {}
+
+  affinity: {}
+  automountServiceAccountToken: ~
+  dnsConfig: {}
+  dnsPolicy: ~
+  containers: []
+  ephemeralContainers: []
+  enableServiceLinks: ~
+  hostAliases: []
+  hostIPC: ~
+  hostNetwork: ~
+  hostPID: ~
+  hostUsers: ~
+  hostname: ~
+  imagePullSecrets: []
+  initContainers: []
+  nodeName: ~
+  nodeSelector: {}
+  os: {}
+  preemptionPolicy: ~
+  priority: ~
+  priorityClassName: ~
+  readinessGates: []
+  resourceClaims: []
+  restartPolicy: OnFailure
+  runtimeClassName: ~
+  schedulerName: ~
+  schedulingGates: []
+  securityContext: {}
+  setHostnameAsFQDN: ~
+  shareProcessNamespace: ~
+  subdomain: ~
+  terminationGracePeriodSeconds: ~
+  tolerations: {}
+  topologySpreadConstraints: {}
+  volumes: []
+  volumeMounts: []
+  workingDir: ~
+
+  args: []
+  command:
+    - bash
+    - -ec
+    - |
+      PGPASSWORD=$POSTGRES_PASSWORD pg_dumpall -h $POSTGRES_HOST -p $POSTGRES_PORT -U $POSTGRES_USER -f $BACKUP_DIR/dump-$(date '+%Y%m%d%H%M%S').sql
+      find $BACKUP_DIR -type f -mtime +$RETENTION_DAYS -exec rm {} \;
+  lifecycle: {}
+  livenessProbe: {}
+  readinessProbe: {}
+  resizePolicy: {}
+  containerSecurityContext: {}
+  startupProbe: {}
+  stdin: ~
+  stdinOnce: ~
+  terminationMessagePath: ~
+  terminationMessagePolicy: ~
+  tty: ~
+  volumeDevices: []
+
+  persistence:
+    enabled: true
+
+    mountPath: /backup
+
+    accessModes:
+      - ReadWriteOnce
+    resources:
+      requests:
+        storage: 8Gi
+
+    annotations: {}
+    labels: {}
+    name: ~
+
+    dataSource: {}
+    dataSourceRef: {}
+    selector: {}
+    storageClassName: ~
+    volumeAttributesClassName: ~
+    volumeMode: ~
+    volumeName: ~

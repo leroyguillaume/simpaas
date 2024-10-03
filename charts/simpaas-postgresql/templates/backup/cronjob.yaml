@@ -1,0 +1,358 @@
+{{- if .Values.backup.enabled }}
+{{- $affinity := merge .Values.backup.affinity .Values.common.affinity -}}
+{{- $annotations := merge .Values.backup.annotations .Values.common.annotations -}}
+{{- $containerSecurityContext := merge .Values.backup.containerSecurityContext .Values.common.containerSecurityContext -}}
+{{- $containers := concat .Values.common.containers .Values.backup.containers -}}
+{{- $dnsConfig := merge .Values.backup.dnsConfig .Values.common.dnsConfig -}}
+{{- $dnsPolicy := default .Values.common.dnsPolicy .Values.backup.dnsPolicy -}}
+{{- $env := concat .Values.common.env .Values.backup.env -}}
+{{- $envFrom := concat .Values.common.envFrom .Values.backup.envFrom -}}
+{{- $ephemeralContainers := concat .Values.common.ephemeralContainers .Values.backup.ephemeralContainers -}}
+{{- $hostAliases := concat .Values.common.hostAliases .Values.backup.hostAliases -}}
+{{- $imagePullSecrets := concat .Values.common.imagePullSecrets .Values.backup.imagePullSecrets -}}
+{{- $initContainers := concat .Values.common.initContainers .Values.backup.initContainers -}}
+{{- $jobAnnotations := merge .Values.backup.jobAnnotations .Values.common.jobAnnotations -}}
+{{- $jobLabels := merge .Values.backup.jobLabels .Values.common.jobLabels -}}
+{{- $labels := merge .Values.backup.labels .Values.common.labels -}}
+{{- $nodeName := default .Values.common.nodeName .Values.backup.nodeName -}}
+{{- $nodeSelector := merge .Values.backup.nodeSelector .Values.common.nodeSelector -}}
+{{- $os := merge .Values.backup.os .Values.common.os -}}
+{{- $podAnnotations := merge .Values.backup.podAnnotations .Values.common.podAnnotations -}}
+{{- $podLabels := merge .Values.backup.podLabels .Values.common.podLabels -}}
+{{- $preemptionPolicy := default .Values.common.preemptionPolicy .Values.backup.preemptionPolicy -}}
+{{- $priorityClassName := default .Values.common.priorityClassName .Values.backup.priorityClassName -}}
+{{- $readinessGates := concat .Values.common.readinessGates .Values.backup.readinessGates -}}
+{{- $resourceClaims := concat .Values.common.resourceClaims .Values.backup.resourceClaims -}}
+{{- $runtimeClassName := default .Values.common.runtimeClassName .Values.backup.runtimeClassName -}}
+{{- $schedulerName := default .Values.common.schedulerName .Values.backup.schedulerName -}}
+{{- $schedulingGates := concat .Values.common.schedulingGates .Values.backup.schedulingGates -}}
+{{- $securityContext := merge .Values.backup.securityContext .Values.common.securityContext -}}
+{{- $subdomain := default .Values.common.subdomain .Values.pgpool.subdomain -}}
+{{- $terminationMessagePath := default .Values.common.terminationMessagePath .Values.backup.terminationMessagePath -}}
+{{- $terminationMessagePolicy := default .Values.common.terminationMessagePolicy .Values.backup.terminationMessagePolicy -}}
+{{- $tolerations := merge .Values.backup.tolerations .Values.common.tolerations -}}
+{{- $topologySpreadConstraints := merge .Values.backup.topologySpreadConstraints .Values.common.topologySpreadConstraints -}}
+{{- $volumeDevices := concat .Values.common.volumeDevices .Values.backup.volumeDevices -}}
+{{- $volumeMounts := concat .Values.common.volumeMounts .Values.backup.volumeMounts -}}
+{{- $volumes := concat .Values.common.volumes .Values.backup.volumes -}}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  {{- with $annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  labels:
+    {{- include "simpaas-postgresql.labels" . | nindent 4 }}
+    {{- with $labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  name: {{ include "simpaas-postgresql.backup.name" . }}
+spec:
+  {{- if .Values.backup.concurrencyPolicy }}
+  concurrencyPolicy: {{ .Values.backup.concurrencyPolicy }}
+  {{- end }}
+  {{- if not (eq nil .Values.backup.failedJobsHistoryLimit) }}
+  failedJobsHistoryLimit: {{ .Values.backup.failedJobsHistoryLimit }}
+  {{- end }}
+  schedule: {{ .Values.backup.schedule | quote }}
+  {{- if .Values.backup.startingDeadlineSeconds }}
+  startingDeadlineSeconds: {{ .Values.backup.startingDeadlineSeconds }}
+  {{- end }}
+  {{- if not (eq nil .Values.backup.successfulJobsHistoryLimit) }}
+  failedJobsHistoryLimit: {{ .Values.backup.successfulJobsHistoryLimit }}
+  {{- end }}
+  jobTemplate:
+    metadata:
+      {{- with $jobAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $jobLabels }}
+      labels:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      {{- if .Values.backup.activeDeadlineSeconds }}
+      activeDeadlineSeconds: {{ .Values.backup.activeDeadlineSeconds }}
+      {{- end }}
+      {{- if not (eq nil .Values.backup.backoffLimit) }}
+      backoffLimit: {{ .Values.backup.backoffLimit }}
+      {{- end }}
+      {{- if not (eq nil .Values.backup.backoffLimitPerIndex) }}
+      backoffLimitPerIndex: {{ .Values.backup.backoffLimitPerIndex }}
+      {{- end }}
+      {{- if .Values.backup.completionMode }}
+      completionMode: {{ .Values.backup.completionMode }}
+      {{- end }}
+      {{- if .Values.backup.completions }}
+      completions: {{ .Values.backup.completions }}
+      {{- end }}
+      {{- if not (eq nil .Values.backup.maxFailedIndexes) }}
+      maxFailedIndexes: {{ .Values.backup.maxFailedIndexes }}
+      {{- end }}
+      {{- if not (eq nil .Values.backup.parallelism) }}
+      parallelism: {{ .Values.backup.parallelism }}
+      {{- end }}
+      {{- with .Values.backup.podFailurePolicy }}
+      podFailurePolicy:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if .Values.backup.podReplacementPolicy }}
+      podReplacementPolicy: {{ .Values.backup.podReplacementPolicy }}
+      {{- end }}
+      {{- with .Values.backup.successPolicy }}
+      successPolicy:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if not (eq nil .Values.backup.suspend) }}
+      suspend: {{ .Values.backup.suspend }}
+      {{- end }}
+      template:
+        metadata:
+          {{- with $podAnnotations }}
+          annotations:
+            {{- toYaml $podAnnotations | nindent 12 }}
+          {{- end }}
+          {{- with $podLabels }}
+          labels:
+            {{- toYaml $podLabels | nindent 12 }}
+          {{- end }}
+        spec:
+          {{- if .Values.backup.activeDeadlineSeconds }}
+          activeDeadlineSeconds: {{ .Values.backup.activeDeadlineSeconds }}
+          {{- end }}
+          {{- with $affinity }}
+          affinity:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- if not (eq nil .Values.backup.automountServiceAccountToken) }}
+          automountServiceAccountToken: {{ .Values.backup.automountServiceAccountToken }}
+          {{- end }}
+          containers:
+            - {{- with .Values.backup.args }}
+              args:
+                {{- toYaml . | nindent 16 }}
+              {{- end }}
+              {{- with .Values.backup.command }}
+              command:
+                {{- toYaml . | nindent 16 }}
+              {{- end }}
+              env:
+                - name: BACKUP_DIR
+                  value: {{ .Values.backup.persistence.mountPath }}
+                - name: POSTGRES_HOST
+                  value: {{ include "simpaas-postgresql.postgresql.name" . }}
+                - name: POSTGRES_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ include "simpaas-postgresql.secret.name" . }}
+                      key: {{ .Values.secret.postgresPasswordKey }}
+                - name: POSTGRES_PORT
+                  value: {{ .Values.postgresql.service.port | quote }}
+                - name: POSTGRES_USER
+                  value: {{ .Values.postgresql.postgresUser }}
+                - name: RETENTION_DAYS
+                  value: {{ .Values.backup.retentionDays | quote }}
+                {{- with $env }}
+                {{- toYaml . | nindent 16 }}
+                {{- end }}
+              {{- with $envFrom }}
+              envFrom:
+                {{- toYaml . | nindent 16 }}
+              {{- end }}
+              image: {{ include "utils.image" (dict "common" .Values.common.image "image" .Values.backup.image) }}
+              imagePullPolicy: {{ default .Values.common.imagePullPolicy .Values.backup.imagePullPolicy }}
+              {{- with .Values.backup.lifecycle }}
+              lifecycle:
+                {{- toYaml . | nindent 16 }}
+              {{- end }}
+              {{- with .Values.backup.livenessProbe }}
+              livenessProbe:
+                {{- toYaml . | nindent 16 }}
+              {{- end }}
+              name: backup
+              {{- with .Values.backup.readinessProbe }}
+              readinessProbe:
+                {{- toYaml . | nindent 12 }}
+              {{- end }}
+              {{- with .Values.backup.resizePolicy }}
+              resizePolicy:
+                {{- toYaml . | nindent 16 }}
+              {{- end }}
+              {{- with .Values.backup.resources }}
+              resources:
+                {{- toYaml . | nindent 16 }}
+              {{- end }}
+              {{- with $containerSecurityContext }}
+              securityContext:
+                {{- toYaml . | nindent 16 }}
+              {{- end }}
+              {{- with .Values.backup.startupProbe }}
+              startupProbe:
+                {{- toYaml . | nindent 16 }}
+              {{- end }}
+              {{- if not (eq nil .Values.backup.stdin) }}
+              stdin: {{ .Values.backup.stdin }}
+              {{- end }}
+              {{- if not (eq nil .Values.backup.stdinOnce) }}
+              stdinOnce: {{ .Values.backup.stdinOnce }}
+              {{- end }}
+              {{- if $terminationMessagePath }}
+              terminationMessagePath: {{ $terminationMessagePath }}
+              {{- end }}
+              {{- if $terminationMessagePolicy }}
+              terminationMessagePolicy: {{ $terminationMessagePolicy }}
+              {{- end }}
+              {{- if not (eq nil .Values.backup.tty) }}
+              tty: {{ .Values.backup.tty }}
+              {{- end }}
+              {{- with $volumeDevices }}
+              volumeDevices:
+                {{- toYaml . | nindent 16 }}
+              {{- end }}
+              volumeMounts:
+                - mountPath: {{ .Values.backup.persistence.mountPath }}
+                  name: backup
+                - name: empty-dir
+                  mountPath: /tmp
+                  subPath: tmp
+                {{- with $volumeMounts }}
+                {{- toYaml . | nindent 16 }}
+                {{- end }}
+              {{- if .Values.backup.workingDir }}
+              workingDir: {{ .Values.backup.workingDir }}
+              {{- end }}
+            {{- with $containers }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- with $dnsConfig }}
+          dnsConfig:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- if $dnsPolicy }}
+          dnsPolicy: {{ $dnsPolicy }}
+          {{- end }}
+          {{- if not (eq nil .Values.backup.enableServiceLinks) }}
+          enableServiceLinks: {{ .Values.backup.enableServiceLinks }}
+          {{- end }}
+          {{- with $ephemeralContainers }}
+          ephemeralContainers:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with $hostAliases }}
+          hostAliases:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- if not (eq nil .Values.backup.hostIPC) }}
+          hostIPC: {{ .Values.backup.hostIPC }}
+          {{- end }}
+          {{- if not (eq nil .Values.backup.hostNetwork) }}
+          hostNetwork: {{ .Values.backup.hostNetwork }}
+          {{- end }}
+          {{- if not (eq nil .Values.backup.hostPID) }}
+          hostPID: {{ .Values.backup.hostPID }}
+          {{- end }}
+          {{- if not (eq nil .Values.backup.hostUsers) }}
+          hostUsers: {{ .Values.backup.hostUsers }}
+          {{- end }}
+          {{- if .Values.backup.hostname }}
+          hostname: {{ .Values.backup.hostname }}
+          {{- end }}
+          {{- with $imagePullSecrets }}
+          imagePullSecrets:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with $initContainers }}
+          initContainers:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- if $nodeName }}
+          nodeName: {{ $nodeName }}
+          {{- end }}
+          {{- with $nodeSelector }}
+          nodeSelector:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with $os }}
+          os:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- if $preemptionPolicy }}
+          preemptionPolicy: {{ $preemptionPolicy }}
+          {{- end }}
+          {{- if not (eq nil .Values.backup.priority) }}
+          priority: {{ .Values.backup.priority }}
+          {{- end }}
+          {{- if $priorityClassName }}
+          priorityClassName: {{ $priorityClassName }}
+          {{- end }}
+          {{- with $readinessGates }}
+          readinessGates:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with $resourceClaims }}
+          resourceClaims:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- if .Values.backup.restartPolicy }}
+          restartPolicy: {{ .Values.backup.restartPolicy }}
+          {{- end }}
+          {{- if $runtimeClassName }}
+          runtimeClassName: {{ $runtimeClassName }}
+          {{- end }}
+          {{- if $schedulerName }}
+          schedulerName: {{ $schedulerName }}
+          {{- end }}
+          {{- with $schedulingGates }}
+          schedulingGates:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with $securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          serviceAccountName: {{ include "simpaas-postgresql.serviceAccount.name" . }}
+          {{- if not (eq nil .Values.backup.setHostnameAsFQDN) }}
+          setHostnameAsFQDN: {{ .Values.backup.setHostnameAsFQDN }}
+          {{- end }}
+          {{- if not (eq nil .Values.backup.shareProcessNamespace) }}
+          shareProcessNamespace: {{ .Values.backup.shareProcessNamespace }}
+          {{- end }}
+          {{- if $subdomain }}
+          subdomain: {{ $subdomain }}
+          {{- end }}
+          {{- if not (eq nil .Values.backup.terminationGracePeriodSeconds) }}
+          terminationGracePeriodSeconds: {{ .Values.backup.terminationGracePeriodSeconds }}
+          {{- end }}
+          {{- with $tolerations }}
+          tolerations:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with $topologySpreadConstraints }}
+          topologySpreadConstraints:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          volumes:
+            - name: backup
+              {{- if .Values.backup.persistence.enabled }}
+              persistentVolumeClaim:
+                claimName: {{ include "simpaas-postgresql.backup.pvc.name" . }}
+              {{- else }}
+              emptyDir: {}
+              {{- end }}
+            - name: empty-dir
+              emptyDir: {}
+            {{- with $volumes }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+      {{- if .Values.backup.ttlSecondsAfterFinished }}
+      ttlSecondsAfterFinished: {{ .Values.backup.ttlSecondsAfterFinished }}
+      {{- end }}
+  {{- if not (eq nil .Values.backup.suspend) }}
+  suspend: {{ .Values.backup.suspend }}
+  {{- end }}
+  {{- if .Values.backup.timeZone }}
+  timeZone: {{ .Values.backup.timeZone }}
+  {{- end }}
+{{- end }}
